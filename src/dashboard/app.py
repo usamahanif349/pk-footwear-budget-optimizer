@@ -51,6 +51,19 @@ def profit_curve(plats, slices, margin, min_share, max_share, max_budget):
         t = evaluate(al, ps, slices, margin)
         out.append(dict(budget=b, revenue=t.revenue.sum(), profit=t.profit.sum()))
     return pd.DataFrame(out)
+@st.cache_data
+def bootstrap_curves(n_boot=50, seed=0):
+    """Refit the curves on 50 random resamples of the data (with replacement)."""
+    data = load_data()
+    rng = np.random.default_rng(seed)
+    out = []
+    for _ in range(n_boot):
+        idx = rng.integers(0, len(data), len(data))
+        try:
+            out.append(fit_curves(data.iloc[idx]))
+        except RuntimeError:
+            pass  # skip the rare resample where the fit does not converge
+    return out
 
 
 def rs(x):
@@ -139,6 +152,7 @@ with tabs[0]:
         st.subheader("Optimizer vs simple strategies")
         fig = px.bar(comp, x="strategy", y="revenue", color="strategy",
                      text=comp["vs_equal_%"].map(lambda v: f"{v:+.1f}% vs equal"))
+        fig.update_traces(textposition="outside", textangle=0)
         fig.update_layout(showlegend=False, yaxis_title="Expected revenue (Rs.)",
                           xaxis_title="")
         st.plotly_chart(fig)
@@ -149,7 +163,28 @@ with tabs[0]:
         "share_%": "{:.1f}%", "spend": "Rs. {:,.0f}", "revenue": "Rs. {:,.0f}",
         "ROAS": "{:.2f}", "marginal_ROAS": "{:.2f}", "profit": "Rs. {:,.0f}"},
         na_rep="–"), hide_index=True)
-
+    st.subheader("How sure are we?")
+    boots = bootstrap_curves()
+    shares = []
+    for bc in boots:
+        al = optimize({p: bc[p] for p in platforms}, budget, slices, min_share, max_share)
+        shares.append({p: al.get(p, 0.0) / budget * 100 for p in all_plats})
+    sh = pd.DataFrame(shares)
+    ci = pd.DataFrame({"platform": all_plats,
+                       "recommended_%": [alloc[p] / budget * 100 for p in all_plats],
+                       "low_%": sh.quantile(0.05).to_numpy(),
+                       "high_%": sh.quantile(0.95).to_numpy()})
+    ci["plus"] = (ci["high_%"] - ci["recommended_%"]).clip(lower=0)
+    ci["minus"] = (ci["recommended_%"] - ci["low_%"]).clip(lower=0)
+    fig = px.bar(ci, x="platform", y="recommended_%", error_y="plus", error_y_minus="minus",
+                 color="platform", color_discrete_map=COLORS)
+    fig.update_layout(showlegend=False, yaxis_title="Share of budget (%)", xaxis_title="",
+                      title=f"Recommended share with 90% range ({len(boots)} bootstrap resamples)")
+    st.plotly_chart(fig)
+    st.dataframe(ci[["platform", "recommended_%", "low_%", "high_%"]].style.format(
+        {"recommended_%": "{:.1f}%", "low_%": "{:.1f}%", "high_%": "{:.1f}%"}), hide_index=True)
+    st.caption("Ranges show uncertainty from the limited sample (10k rows) only. They do NOT "
+               "cover wrong assumptions or a wrong curve shape.")
     breakeven = 1 / margin
     funded = rec[rec.spend > 1]
     lo, hi = funded.marginal_ROAS.min(), funded.marginal_ROAS.max()
