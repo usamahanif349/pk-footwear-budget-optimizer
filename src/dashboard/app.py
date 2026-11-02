@@ -115,7 +115,7 @@ st.warning("⚠️ All data is **simulated** for a fictional brand, using stated
            "(see the About tab). It shows the method, not real Pakistani ad prices.")
 
 tabs = st.tabs(["🎯 Recommendation", "📈 Response curves", "🔍 KPI explorer",
-                "✅ Validation", "ℹ️ About & limitations"])
+                "✅ Validation", "ℹ️ About & limitations", "⚡ Big Data benchmark"])
 
 # ---------------- TAB 1 ----------------
 with tabs[0]:
@@ -309,3 +309,62 @@ with tabs[4]:
         "- **Pooled curves:** one curve per platform; segments (age, city…) aren't optimised separately.\n"
         "- **Scale assumption:** absolute revenue depends on the slices setting; comparisons "
         "between strategies are more reliable than the absolute numbers.")
+
+
+# ---------------- TAB 6 ----------------
+with tabs[5]:
+    st.subheader("Pandas vs Hadoop MapReduce vs Spark")
+    st.write("Same job on every engine: read the CSV, group by platform + campaign, and sum "
+             "impressions, clicks, spend, conversions and revenue. Run on Google Colab free "
+             "tier (1 machine, 2 CPU cores, 12 GB RAM), median of 3 runs. Hadoop 3.5.0 "
+             "Streaming in local mode, PySpark 4.0.5 local[*]. **All engines produced identical "
+             "totals at every size.**")
+    b_file, big_file = PROC / "benchmark_results.csv", PROC / "benchmark_100M.csv"
+    if b_file.exists():
+        b = pd.read_csv(b_file)
+        fig = px.line(b, x="rows", y="median_s", color="engine", markers=True,
+                      log_x=True, log_y=True)
+        fig.update_layout(xaxis_title="Rows (log scale)", yaxis_title="Seconds (log scale)",
+                          title="Read + aggregate time, 10k → 10M rows")
+        st.plotly_chart(fig)
+        piv = b.pivot(index="rows", columns="engine", values="median_s")
+        piv.index = piv.index.map(lambda r: f"{r:,} rows")
+        st.dataframe(piv.style.format("{:.2f} s"))
+        b["rows_lbl"] = b.rows.map(lambda r: f"{r:,}")
+        fig = px.bar(b, x="rows_lbl", y="rows_per_s", color="engine", barmode="group")
+        fig.update_layout(xaxis_title="Rows", yaxis_title="Rows processed per second",
+                          title="Throughput")
+        st.plotly_chart(fig)
+    else:
+        st.info("benchmark_results.csv not found.")
+
+    if big_file.exists():
+        big = pd.read_csv(big_file)
+        st.subheader("Stress test: 100M rows (8 GB file)")
+        cols = st.columns(len(big))
+        for col, (_, r) in zip(cols, big.iterrows()):
+            if r.status == "OK":
+                col.metric(r.engine, f"{r.seconds:.0f} s",
+                           "correct totals" if r.correct else "WRONG totals")
+            else:
+                col.metric(r.engine, "Crashed", "out of memory", delta_color="inverse")
+        st.caption(f"The 100M file is the 10M file **replicated 10×** (tests scale, not new "
+                   f"information). Plain Pandas ran in a separate process with a "
+                   f"{big.memory_cap_gb.iloc[0]} GB memory cap (free RAM at the time) and "
+                   f"failed to allocate memory. Chunked Pandas reads 2M rows at a time. 1 run each.")
+
+    st.success(
+        "**Key takeaways**\n"
+        "- **On one machine, Pandas is fastest up to 10M rows.** Hadoop pays about 4.5 s and "
+        "Spark about 1 s of start-up per job, and on 2 cores neither catches up per row.\n"
+        "- **At 100M rows (8 GB), plain Pandas ran out of memory**; Spark and Hadoop finished "
+        "with correct results.\n"
+        "- **Chunked Pandas was still fastest (83 s vs Spark 137 s vs Hadoop 213 s).** The real "
+        "value of Spark and Hadoop is spreading work over **many machines** and surviving "
+        "failures, which a single free Colab machine can't show.\n"
+        "- **Decision rule:** use Pandas while data fits in memory, chunk it when it doesn't, "
+        "and move to Spark when you need a cluster. Hadoop MapReduce is the slowest and mostly "
+        "legacy; Spark replaced it for this kind of job.")
+    st.warning("**Limitations:** one 2-core machine only (no real cluster); 100M rows are "
+               "replicated; a simple group-by job (joins or ML would behave differently); "
+               "the Spark JVM start-up was excluded from timings; Colab's speed varies run to run.")
