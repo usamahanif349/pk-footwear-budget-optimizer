@@ -1,0 +1,4 @@
+rows,optimizer_pct_mean,optimizer_pct_std,lastyear_pct,equal_pct,share_error_pp_mean,share_error_pp_std
+10000,99.877,0.103,96.388,94.384,1.318,0.53
+100000,99.986,0.011,96.376,94.384,0.427,0.178
+1000000,99.998,0.0,96.41,94.384,0.155,0.029
