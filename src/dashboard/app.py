@@ -39,6 +39,8 @@ COLORS = {"Facebook": "#2A78D6", "TikTok": "#EB6834", "Instagram": "#1BAF7A",
           "Google": "#EDA100", "YouTube": "#E87BA4"}
 DARK_TEXT_ON = {"Google"}  # yellow fill needs dark text
 SHAPE_COLORS = {"Same as assumed": NAVY, "Exponential": "#EB6834", "S-curve": "#1BAF7A"}
+# System fonts only: a web font that loads late makes Plotly misplace legend labels.
+CHART_FONT = "Segoe UI, -apple-system, Helvetica Neue, Arial, sans-serif"
 ENGINE_COLORS = {"Pandas": "#2A78D6", "Spark": "#EB6834", "Hadoop MapReduce": "#1BAF7A"}
 
 st.set_page_config(page_title="StepUp ad budget optimizer", page_icon="📊", layout="wide")
@@ -136,7 +138,7 @@ st.markdown(CSS, unsafe_allow_html=True)
 
 pio.templates["stepup"] = go.layout.Template(layout=go.Layout(
     paper_bgcolor="#FFFFFF", plot_bgcolor="#FFFFFF",
-    font=dict(color="#3B414B", family="Source Sans 3, Source Sans Pro, Segoe UI, sans-serif", size=13),
+    font=dict(color="#3B414B", family=CHART_FONT, size=13),
     colorway=list(COLORS.values()),
     xaxis=dict(gridcolor="#EEF0F3", zerolinecolor="#C9CED6", linecolor="#C9CED6",
                ticks="", showline=True),
@@ -147,7 +149,7 @@ pio.templates["stepup"] = go.layout.Template(layout=go.Layout(
                 xanchor="left", x=0, title_text=""),
     title=dict(font=dict(size=15, color=INK), x=0, xanchor="left", y=0.98),
     hoverlabel=dict(bgcolor="#FFFFFF", bordercolor="#D5D9E0",
-                    font=dict(color=INK, family="Source Sans 3, Source Sans Pro, sans-serif"))))
+                    font=dict(color=INK, family=CHART_FONT))))
 pio.templates.default = "plotly_white+stepup"
 
 
@@ -158,8 +160,7 @@ def show(fig, height=None):
     # Set the look directly on each chart: Streamlit was painting the plot area grey.
     fig.update_layout(template="plotly_white+stepup", paper_bgcolor="#FFFFFF",
                       plot_bgcolor="#FFFFFF",
-                      font=dict(color="#3B414B", family="Source Sans 3, Source Sans Pro, "
-                                "Segoe UI, sans-serif", size=13))
+                      font=dict(color="#3B414B", family=CHART_FONT, size=13))
     axis = dict(gridcolor="#EEF0F3", zerolinecolor="#C9CED6", linecolor="#C9CED6")
     fig.update_xaxes(**axis)
     fig.update_yaxes(**axis)
