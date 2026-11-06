@@ -151,7 +151,11 @@ pio.templates["stepup"] = go.layout.Template(layout=go.Layout(
 pio.templates.default = "plotly_white+stepup"
 
 
+ROW_TICKS = dict(tickvals=[1e4, 1e5, 1e6, 1e7], ticktext=["10k", "100k", "1M", "10M"])
+
+
 def show(fig, height=None):
+    fig.update_layout(template="plotly_white+stepup")
     if height:
         fig.update_layout(height=height)
     if fig.layout.title.text and fig.layout.showlegend is not False:
@@ -382,7 +386,7 @@ with tabs[0]:
         hovertemplate="%{y}: Rs. %{x:,.0f}<extra></extra>"))
     fig.update_layout(xaxis_title="Expected revenue (Rs.)", showlegend=False,
                       xaxis_range=[0, comp.revenue.max() * 1.38], margin=dict(t=10),
-                      yaxis=dict(showline=False), xaxis=dict(showgrid=True))
+                      yaxis=dict(showline=False, ticksuffix="   "), xaxis=dict(showgrid=True))
     show(fig, 260)
     st.caption(f"Putting everything on {best}, the platform with the best average ROAS, "
                "earns the least: diminishing returns punish putting all eggs in one basket.")
@@ -548,6 +552,7 @@ with tabs[3]:
             line=dict(color=NAVY, width=2), marker=dict(size=9),
             error_y=dict(array=vs.share_error_pp_std, thickness=1.5, width=5, color=NAVY),
             hovertemplate="%{x:,} rows: %{y:.2f} pp<extra></extra>"))
+        fig.update_xaxes(**ROW_TICKS)
         fig.update_layout(xaxis_type="log", xaxis_title="Rows of data (log scale)",
                           yaxis_title="Average share error (pp)", yaxis_rangemode="tozero",
                           title="Each 10× more data cuts the error about 3×")
@@ -614,6 +619,7 @@ with tabs[3]:
                     x=d.rows, y=d.share_error_pp_mean, name=lbl, mode="lines+markers",
                     line=dict(color=col, width=2), marker=dict(size=8),
                     hovertemplate=f"{lbl}, %{{x:,}} rows: %{{y:.2f}} pp<extra></extra>"))
+            fig.update_xaxes(**ROW_TICKS)
             fig.update_layout(title="Share error vs data size",
                               xaxis_type="log", xaxis_title="Rows of data (log scale)",
                               yaxis_title="Average share error (pp)", yaxis_rangemode="tozero")
@@ -670,6 +676,8 @@ with tabs[4]:
                                          line=dict(color=col, width=2), marker=dict(size=8),
                                          hovertemplate=f"{eng}, %{{x:,}} rows: %{{y:.2f}} s"
                                                        f"<extra></extra>"))
+            fig.update_xaxes(**ROW_TICKS)
+            fig.update_yaxes(dtick=1)
             fig.update_layout(xaxis_type="log", yaxis_type="log",
                               xaxis_title="Rows (log scale)", yaxis_title="Seconds (log scale)",
                               title="Read and aggregate time, 10k to 10M rows")
