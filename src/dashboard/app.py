@@ -620,9 +620,9 @@ def page_validation():
                  "of the true best revenue"),
                 ("Equal split", f"{v.equal_pct.iloc[0]:.1f}%", "", "",
                  "of the true best revenue"),
-                ("Share error, 10k to 1M rows",
+                ("Share error (pp)",
                  f"{v.share_error_pp_mean.iloc[0]:.2f} → {v.share_error_pp_mean.iloc[-1]:.2f}",
-                 "pp", "neutral", "more data gives a more precise split"),
+                 "", "", "from 10k to 1M rows: more data, more precise"),
             ])
             fig = go.Figure(go.Scatter(
                 x=v.rows, y=v.share_error_pp_mean, mode="lines+markers", showlegend=False,
