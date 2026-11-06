@@ -58,11 +58,31 @@ For comparison, the equal split captures 94.4% and last year's split 96.4%.
 
 Fitted vs true curve parameters (10k rows): the half-saturation spend was recovered closely for Facebook (7,994 vs 8,000), Instagram (6,885 vs 7,000) and YouTube (11,850 vs 10,000), less well for Google (3,696 vs 3,000) and TikTok (8,954 vs 12,000).
 
-### 4. How sure are we? (bootstrap)
+### 4. Hard mode: what if the real curve has a different shape?
 
-The fit and optimisation were rerun on 50 bootstrap resamples to get a 90% range per platform (shown in the dashboard). **2 of the 5 true optimal shares (Google 14.3%, TikTok 30.6%) fall just outside their ranges**, so with 10k rows the ranges are somewhat over-confident. Treat them as a guide, not a guarantee.
+The test above is a best case: the data uses the same curve shape the optimizer assumes. In hard mode the data comes from two other shapes, while the optimizer still fits its usual curve (5 runs per setting):
 
-### 5. Big Data benchmark: Pandas vs Hadoop MapReduce vs Spark
+| True curve shape | Optimizer at 10k rows | Optimizer at 1M rows | Equal split | Last year's split | Share error, 10k → 1M rows |
+|---|---|---|---|---|---|
+| Same as assumed | 99.88% | 99.998% | 94.4% | 96.4% | 1.32 → 0.15 pp |
+| Exponential (saturates faster) | 99.75% | 99.93% | 92.4% | 95.6% | 1.54 → 0.79 pp |
+| S-curve (small budgets barely work) | 95.96% | 99.72% | 64.3% | 74.3% | 2.50 → 1.58 pp |
+
+- **Robust:** even with the wrong curve shape, the optimizer gets 96% or more of the best revenue on average and always beats the equal and last-year splits. The worst single run was 93.9% (S-curve, 10k rows).
+- **Weak spot:** with the right shape, more data keeps shrinking the error. With the wrong shape the error **stops shrinking** (about 0.8 pp exponential, 1.6 pp S-curve). More data cannot fix a wrong model.
+
+### 5. How sure are we? (bootstrap)
+
+The fit and optimisation are rerun on 200 bootstrap resamples to get a 90% range per platform (shown in the dashboard). To check whether these ranges are honest, the whole procedure was repeated on **30 fresh simulated datasets**, counting how often the true best share fell inside the range:
+
+| Bootstrap resamples | True share inside the 90% range |
+|---|---|
+| 50 | 89.3% |
+| 200 | 92.0% |
+
+The ranges are **well calibrated** (target 90%). An earlier single-dataset check had 2 of 5 true shares just outside the range; across 30 datasets that turned out to be chance. The weakest platform is YouTube (83–87%), whose true share of 0.5% sits right next to the 0% limit. A second method (the "basic" bootstrap) did worse (82.7%), so the percentile method is kept.
+
+### 6. Big Data benchmark: Pandas vs Hadoop MapReduce vs Spark
 
 Same job on every engine: read the CSV, group by platform + campaign, and sum impressions, clicks, spend, conversions and revenue. Google Colab free tier (1 machine, 2 cores, 12 GB RAM); Hadoop 3.5.0 Streaming (local mode); PySpark 4.0.5 (`local[*]`); median of 3 runs. **All engines produced identical totals at every size.**
 
@@ -94,8 +114,9 @@ Same job on every engine: read the CSV, group by platform + campaign, and sum im
 2. **KPIs** computed from sums: CTR, CPC, CVR (conversion rate), CPA, ROAS, revenue, and campaign performance.
 3. **Response curves:** per platform, fit `revenue(s) = a·s / (1 + s/h)` with non-linear least squares (`scipy.optimize.curve_fit`). `a` = ROAS at very small spend, `h` = spend where efficiency halves.
 4. **Optimise:** maximise total expected revenue subject to the budget and optional min/max shares (SLSQP). With a fixed budget, maximising revenue also maximises profit.
-5. **Validate** against the known true optimum (10k / 100k / 1M rows × 5 seeds) and **bootstrap** for uncertainty.
-6. **Benchmark** Pandas vs Hadoop MapReduce vs Spark from 10k to 100M rows.
+5. **Validate** against the known true optimum (10k / 100k / 1M rows × 5 seeds), then repeat in **hard mode** with data from two other curve shapes.
+6. **Bootstrap** (200 resamples) for uncertainty, and check on 30 fresh datasets that the 90% ranges contain the truth about 90% of the time.
+7. **Benchmark** Pandas vs Hadoop MapReduce vs Spark from 10k to 100M rows.
 
 ## Simulation assumptions (PKR)
 
@@ -112,13 +133,13 @@ Campaign, age, gender, device and city multipliers, plus random noise, are defin
 ## Limitations (please read)
 
 - **Simulated data.** Results reflect the assumptions above, not real Pakistani ad prices. The numbers are plausible, not sourced from a real company.
-- **Best-case validation.** The optimizer assumes the same curve shape the generator used. Real ad data would not follow this formula exactly, so real accuracy would be lower.
+- **Curve shape.** The main validation uses the same curve shape as the generator. Hard mode shows the optimizer still gets 96%+ of the best revenue with a wrong shape, but its error stops shrinking with more data, so a wrong shape has a cost that more rows can't remove.
 - **No confounding.** Simulated spend is random. In reality, brands spend more when demand is already high (Eid, 11.11), which makes ads look more effective than they are.
 - **Revenue only.** Brand awareness, YouTube's main purpose, is not measured.
 - **No time dynamics.** No ad fatigue, carry-over effects or seasonality inside the optimizer.
 - **One curve per platform.** Segments (age, city, device) are analysed but not optimised separately.
 - **Scale assumption.** Absolute revenue depends on the "slices" setting. Comparisons between strategies are more reliable than the absolute numbers.
-- **Bootstrap ranges are over-confident** at 10k rows (2 of 5 true values fall outside).
+- **Uncertainty ranges** only cover noise from limited data, not a wrong curve shape or wrong assumptions. They are weakest for YouTube, whose true share is close to zero.
 - **Benchmark scope.** One 2-core machine (no real cluster), a simple group-by job, the 100M file is replicated, 1 run at 100M, Spark JVM start-up excluded, and Colab speed varies between runs.
 
 ## Repository structure
@@ -131,6 +152,8 @@ src/simulation/generate_data.py     simulated ad data generator
 src/analysis/kpis.py                CTR, CPC, CVR, CPA, ROAS tables
 src/optimizer/optimize.py           response curves + budget optimiser
 src/optimizer/validate.py           self-check against the true optimum
+src/optimizer/hard_mode.py          self-check when the true curve has a different shape
+src/optimizer/bootstrap_check.py    are the bootstrap 90% ranges honest? (30 datasets)
 src/mapreduce/mapper.py, reducer.py Hadoop Streaming job
 src/dashboard/app.py                Streamlit dashboard
 ```
@@ -145,6 +168,8 @@ python src\simulation\generate_data.py --rows 10000
 python src\analysis\kpis.py --file ads_10000.csv
 python src\optimizer\optimize.py --file ads_10000.csv
 python src\optimizer\validate.py
+python src\optimizer\hard_mode.py
+python src\optimizer\bootstrap_check.py
 streamlit run src\dashboard\app.py
 ```
 
