@@ -111,27 +111,24 @@ table.alloc tr.off td {color: #8A909B;}
 .side-brand {font-size: 1.25rem; font-weight: 700; color: #15181D; line-height: 1.2;}
 .side-brand span {display: block; font-size: .9rem; font-weight: 400; color: #5B6270;}
 
-/* tabs: a full-width tab bar so the sections stand out */
+/* tabs: a clean navigation bar (plain text, thick underline on the active tab) */
 .stTabs {margin-top: 1.8rem;}
-.stTabs [role="tablist"] {display: flex !important; gap: 6px !important;
-  background: #EEF1F5 !important; padding: 6px !important; border-radius: 12px !important;
-  border: 1px solid #DDE2E9 !important; width: 100% !important; flex-wrap: wrap !important;
-  overflow: visible !important;}
-.stTabs button[role="tab"] {flex: 1 1 0 !important; justify-content: center !important;
-  min-width: 140px; padding: 12px 18px !important; height: auto !important;
-  border-radius: 8px !important; background: #FFFFFF !important;
-  border: 1px solid #DDE2E9 !important; margin: 0 !important;}
-.stTabs button[role="tab"] p {font-size: 1rem !important; font-weight: 600 !important;
-  color: #3B414B !important; white-space: nowrap;}
-.stTabs button[role="tab"]:hover {background: #F7F9FB !important; border-color: #B9C1CC !important;}
-.stTabs button[role="tab"][aria-selected="true"] {background: #1E3A5F !important;
-  border-color: #1E3A5F !important; box-shadow: 0 2px 6px rgba(30, 58, 95, .25) !important;}
-.stTabs button[role="tab"][aria-selected="true"] p {color: #FFFFFF !important;}
+.stTabs [role="tablist"] {display: flex !important; gap: 28px !important;
+  background: transparent !important; padding: 0 2px !important;
+  border-top: 1px solid #E3E6EB !important; border-bottom: 1px solid #E3E6EB !important;
+  border-radius: 0 !important; flex-wrap: wrap !important; overflow: visible !important;}
+.stTabs button[role="tab"] {padding: 14px 0 11px !important; height: auto !important;
+  background: transparent !important; border: 0 !important; border-radius: 0 !important;
+  border-bottom: 3px solid transparent !important; margin: 0 0 -1px !important;}
+.stTabs button[role="tab"] p {font-size: 1.02rem !important; font-weight: 600 !important;
+  color: #15181D !important; white-space: nowrap;}
+.stTabs button[role="tab"]:hover {border-bottom-color: #C9CED6 !important;}
+.stTabs button[role="tab"][aria-selected="true"] {border-bottom-color: #15181D !important;}
 .stTabs button[role="tab"]:focus-visible {outline: 2px solid #1E3A5F !important;
   outline-offset: 2px;}
 .stTabs [data-baseweb="tab-highlight"], .stTabs [data-baseweb="tab-border"] {display: none !important;}
 @media (max-width: 800px) {
-  .stTabs button[role="tab"] {min-width: 45%; padding: 10px 8px !important;}
+  .stTabs [role="tablist"] {gap: 18px !important;}
 }
 </style>
 """
