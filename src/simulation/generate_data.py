@@ -63,8 +63,26 @@ DEVICES = ["Mobile", "Desktop", "Tablet"]
 DEVICE_SHARE = [0.80, 0.15, 0.05]
 DEVICE_CVR_MULT = [1.00, 1.25, 1.05]
 
+# Shape of diminishing returns. "hyperbolic" is the main setting and matches
+# the curve the optimizer assumes. The other two are for the "hard mode" test,
+# where the TRUE curve has a different shape than the optimizer expects.
+SHAPES = ["hyperbolic", "exponential", "s_curve"]
 
-def generate(n, seed=42):
+
+def efficiency(spend, half_sat, shape="hyperbolic"):
+    """Share of full ad efficiency left at this spend (between 0 and 1)."""
+    x = np.asarray(spend, dtype=float) / half_sat
+    if shape == "hyperbolic":    # 1/(1+x): smooth decline, half at x=1
+        return 1.0 / (1.0 + x)
+    if shape == "exponential":   # saturates faster, revenue has a hard ceiling
+        x = np.maximum(x, 1e-12)
+        return (1.0 - np.exp(-x)) / x
+    if shape == "s_curve":       # small budgets barely work, best at x=1
+        return 2.0 * x / (1.0 + x ** 2)
+    raise ValueError(f"unknown shape: {shape}")
+
+
+def generate(n, seed=42, shape="hyperbolic"):
     rng = np.random.default_rng(seed)
     plats = list(PLATFORMS)
     camps = list(CAMPAIGNS)
@@ -93,7 +111,7 @@ def generate(n, seed=42):
     spend = np.clip(np.round(rng.lognormal(np.log(4000), 0.8, n)), 200, 150000)
 
     # diminishing returns: efficiency falls as spend in a slice grows
-    sat = 1.0 / (1.0 + spend / parr("half_sat"))
+    sat = efficiency(spend, parr("half_sat"), shape)
 
     impressions = rng.poisson(spend / parr("cpm") * 1000 * rng.lognormal(0, 0.15, n))
     ctr = np.clip(parr("ctr") * carr("ctr").astype(float)[c] * sat
@@ -131,9 +149,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--rows", type=int, default=10000)
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--shape", default="hyperbolic", choices=SHAPES)
     args = ap.parse_args()
 
-    df = generate(args.rows, args.seed)
+    df = generate(args.rows, args.seed, args.shape)
 
     out_dir = Path(__file__).resolve().parents[2] / "data" / "raw"
     out_dir.mkdir(parents=True, exist_ok=True)

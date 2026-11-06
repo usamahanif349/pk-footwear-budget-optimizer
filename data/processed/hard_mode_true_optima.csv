@@ -1,0 +1,16 @@
+shape,platform,true_best_share_pct
+hyperbolic,Facebook,31.267970039242453
+hyperbolic,Instagram,23.27023850802223
+hyperbolic,Google,14.359408870892878
+hyperbolic,TikTok,30.610613905939367
+hyperbolic,YouTube,0.4917686759030642
+exponential,Facebook,32.87143712931377
+exponential,Instagram,23.65873741660252
+exponential,Google,15.383262772003908
+exponential,TikTok,28.08656268207981
+exponential,YouTube,0.0
+s_curve,Facebook,45.805115145123246
+s_curve,Instagram,34.05058893908041
+s_curve,Google,20.144295915789645
+s_curve,TikTok,3.0360335541035012e-12
+s_curve,YouTube,3.6697269789613876e-12
