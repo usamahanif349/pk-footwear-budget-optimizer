@@ -155,7 +155,14 @@ ROW_TICKS = dict(tickvals=[1e4, 1e5, 1e6, 1e7], ticktext=["10k", "100k", "1M", "
 
 
 def show(fig, height=None):
-    fig.update_layout(template="plotly_white+stepup")
+    # Set the look directly on each chart: Streamlit was painting the plot area grey.
+    fig.update_layout(template="plotly_white+stepup", paper_bgcolor="#FFFFFF",
+                      plot_bgcolor="#FFFFFF",
+                      font=dict(color="#3B414B", family="Source Sans 3, Source Sans Pro, "
+                                "Segoe UI, sans-serif", size=13))
+    axis = dict(gridcolor="#EEF0F3", zerolinecolor="#C9CED6", linecolor="#C9CED6")
+    fig.update_xaxes(**axis)
+    fig.update_yaxes(**axis)
     if height:
         fig.update_layout(height=height)
     if fig.layout.title.text and fig.layout.showlegend is not False:
@@ -558,7 +565,15 @@ with tabs[3]:
                           title="Each 10× more data cuts the error about 3×")
         show(fig, 360)
         with st.expander("Validation table"):
-            st.dataframe(vs, hide_index=True)
+            st.dataframe(vs.rename(columns={
+                "rows": "Rows", "optimizer_pct_mean": "Optimizer (% of best)",
+                "optimizer_pct_std": "Optimizer spread", "lastyear_pct": "Last year's split (%)",
+                "equal_pct": "Equal split (%)", "share_error_pp_mean": "Share error (pp)",
+                "share_error_pp_std": "Error spread (pp)"}).style.format(
+                {"Rows": "{:,}", "Optimizer (% of best)": "{:.2f}%", "Optimizer spread": "±{:.2f}",
+                 "Last year's split (%)": "{:.1f}%", "Equal split (%)": "{:.1f}%",
+                 "Share error (pp)": "{:.2f}", "Error spread (pp)": "±{:.2f}"}),
+                hide_index=True)
     else:
         st.info("Run src/optimizer/validate.py to create the validation results.")
     if tr_file.exists():
@@ -633,7 +648,18 @@ with tabs[3]:
             "wrong shape it gets stuck (about 0.8 pp exponential, 1.6 pp S-curve). More data "
             "cannot fix a wrong model; only a better curve can.")
         with st.expander("Hard mode table"):
-            st.dataframe(hm.drop(columns="shape_lbl"), hide_index=True)
+            st.dataframe(hm[["shape_lbl", "rows", "optimizer_pct_mean", "optimizer_pct_min",
+                             "lastyear_pct", "equal_pct", "share_error_pp_mean",
+                             "share_error_pp_std"]].rename(columns={
+                "shape_lbl": "True curve shape", "rows": "Rows",
+                "optimizer_pct_mean": "Optimizer (% of best)", "optimizer_pct_min": "Worst run (%)",
+                "lastyear_pct": "Last year's split (%)", "equal_pct": "Equal split (%)",
+                "share_error_pp_mean": "Share error (pp)",
+                "share_error_pp_std": "Error spread (pp)"}).style.format(
+                {"Rows": "{:,}", "Optimizer (% of best)": "{:.2f}%", "Worst run (%)": "{:.2f}%",
+                 "Last year's split (%)": "{:.1f}%", "Equal split (%)": "{:.1f}%",
+                 "Share error (pp)": "{:.2f}", "Error spread (pp)": "±{:.2f}"}),
+                hide_index=True)
     else:
         st.info("Run src/optimizer/hard_mode.py to create the hard mode results.")
     st.warning("**Still a simulation:** spend here is random and there is no seasonality in the "
