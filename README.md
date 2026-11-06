@@ -3,6 +3,7 @@
 **Live dashboard:** https://pk-footwear-budget-optimizer.streamlit.app/
 **Course:** Big Data Analytics (marketing focus) · Project 2
 **Previous project:** [Pakistani Footwear Brand Sentiment Analysis](https://github.com/usamahanif349/pk-footwear-sentiment-analysis)
+**AI assistance:** built with help from Claude (Anthropic's AI) for parts of the code, testing and dashboard design.
 
 > ⚠️ **All data in this project is simulated** for a fictional brand, *StepUp Footwear*, using clearly stated assumptions. The project demonstrates the **method** (KPIs → response curves → optimisation → validation → Big Data benchmark), not real Pakistani ad prices.
 

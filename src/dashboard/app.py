@@ -21,69 +21,154 @@ from optimize import fit_curves, optimize, evaluate, response  # noqa: E402
 from kpis import kpi_table  # noqa: E402
 import generate_data as G  # noqa: E402
 
-BRAND = "StepUp Footwear"
 DATA_FILE = ROOT / "data" / "raw" / "ads_10000.csv"
 PROC = ROOT / "data" / "processed"
-ACCENT = "#FF6B35"
-MUTED = "#8B95A9"
-COLORS = {"Facebook": "#1877F2", "Instagram": "#E1306C", "Google": "#34A853",
-          "TikTok": "#00BFB3", "YouTube": "#FF3B30"}
+N_BOOT = 200
 
-st.set_page_config(page_title="StepUp · Ad Budget Optimizer", page_icon="👟", layout="wide")
+# ---------------- COLOURS ----------------
+INK = "#15181D"          # main text
+INK_2 = "#5B6270"        # secondary text
+LINE = "#E3E6EB"         # hairlines / grid
+NAVY = "#1E3A5F"         # the optimizer / highlight
+GREY = "#9AA1AD"         # comparison strategies
+GREY_LIGHT = "#C9CED6"
+GOOD, BAD = "#0B7A3E", "#B42318"
+# Platform colours: one fixed, colour-blind-checked palette, in order of the
+# usual spend ranking so neighbours in the budget bar stay easy to tell apart.
+COLORS = {"Facebook": "#2A78D6", "TikTok": "#EB6834", "Instagram": "#1BAF7A",
+          "Google": "#EDA100", "YouTube": "#E87BA4"}
+DARK_TEXT_ON = {"Google"}  # yellow fill needs dark text
+SHAPE_COLORS = {"Same as assumed": NAVY, "Exponential": "#EB6834", "S-curve": "#1BAF7A"}
+# System fonts only: a web font that loads late makes Plotly misplace legend labels.
+CHART_FONT = "Segoe UI, -apple-system, Helvetica Neue, Arial, sans-serif"
+ENGINE_COLORS = {"Pandas": "#2A78D6", "Spark": "#EB6834", "Hadoop MapReduce": "#1BAF7A"}
+
+st.set_page_config(page_title="StepUp ad budget optimizer", page_icon="📊", layout="wide")
 
 # ---------------- STYLE ----------------
 CSS = """
 <style>
-.block-container {padding-top: 2rem; max-width: 1350px;}
-h1, h2, h3 {letter-spacing: -0.02em;}
-.hero {background: linear-gradient(115deg, #FF6B35 0%, #F7418F 45%, #7B2FF7 100%);
-  border-radius: 22px; padding: 30px 34px; color: #fff; margin-bottom: 10px;
-  box-shadow: 0 10px 40px rgba(123,47,247,0.25);}
-.hero-kicker {font-size: .78rem; letter-spacing: .18em; font-weight: 700; opacity: .9;}
-.hero h1 {color: #fff !important; font-size: 2.5rem; font-weight: 800; margin: 6px 0 4px; padding: 0;}
-.hero p {font-size: 1.05rem; opacity: .95; margin: 0 0 6px;}
-.badge {display: inline-block; background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.35);
-  padding: 4px 12px; border-radius: 999px; font-size: .8rem; margin: 10px 6px 0 0;}
-.kpi {background: #151B2B; border: 1px solid #232B3E; border-radius: 16px; padding: 18px 20px; min-height: 118px;}
-.kpi-label {color: #8B95A9; font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; font-weight: 600;}
-.kpi-value {color: #F5F7FB; font-size: 1.55rem; white-space: nowrap; font-weight: 800; margin-top: 6px; line-height: 1.1;}
-.kpi-sub {font-size: .85rem; margin-top: 6px;}
-.plat {background: #151B2B; border: 1px solid #232B3E; border-top: 4px solid; border-radius: 14px;
-  padding: 14px 16px; text-align: center;}
-.plat-name {font-weight: 700; color: #F5F7FB;}
-.plat-share {font-size: 1.7rem; font-weight: 800; margin: 2px 0;}
-.plat-amt {color: #8B95A9; font-size: .82rem;}
-.why {background: linear-gradient(135deg, rgba(255,107,53,.14), rgba(123,47,247,.14));
-  border: 1px solid #2A3350; border-radius: 16px; padding: 18px 22px; margin: 16px 0 6px; line-height: 1.6;}
-.section h3 {margin: 22px 0 0; font-weight: 800;}
-.section p {color: #8B95A9; margin: 2px 0 8px;}
-.side-brand {font-size: 1.4rem; font-weight: 800; margin-bottom: 6px;}
-.side-brand span {display: block; font-size: .8rem; font-weight: 600; color: #FF6B35; letter-spacing: .12em;}
-.stTabs [data-baseweb="tab-list"] {gap: 6px; flex-wrap: wrap;}
-.stTabs [data-baseweb="tab"] {background: #151B2B; border-radius: 10px; padding: 8px 16px; height: auto;}
-.stTabs [aria-selected="true"] {background: #FF6B35 !important;}
-.stTabs [aria-selected="true"] p {color: #fff !important;}
-.stTabs [data-baseweb="tab-highlight"], .stTabs [data-baseweb="tab-border"] {display: none;}
+.block-container {padding-top: 4.5rem; max-width: 1240px;}
+h1, h2, h3 {letter-spacing: -0.01em;}
+
+/* page head */
+.head-brand {color: #5B6270; font-size: .95rem; margin: 0 0 .35rem;}
+.head-brand b {color: #15181D; font-weight: 600;}
+.head h1 {font-size: 2.35rem; line-height: 1.15; font-weight: 700; color: #15181D;
+  margin: 0 0 .5rem; padding: 0;}
+.head p.lede {color: #5B6270; font-size: 1.05rem; max-width: 62ch; margin: 0 0 1.4rem;}
+
+/* allocation: the signature element */
+.alloc-bar {display: flex; gap: 2px; height: 58px; border-radius: 6px; overflow: hidden;
+  margin-bottom: .9rem;}
+.seg {display: flex; align-items: center; padding: 0 12px; min-width: 0; color: #fff;
+  font-weight: 600; font-size: .92rem; white-space: nowrap; overflow: hidden;}
+.seg span.pct {font-weight: 500; opacity: .9; margin-left: 6px;}
+.alloc-wrap {overflow-x: auto;}
+table.alloc {width: 100%; border-collapse: collapse; font-size: .93rem; border: 0;
+  font-variant-numeric: tabular-nums; margin: 0;}
+table.alloc tr, table.alloc th, table.alloc td {border: 0; background: transparent;}
+table.alloc th {text-align: right; color: #5B6270; font-weight: 500; padding: 6px 10px;
+  border-bottom: 1px solid #E3E6EB !important; white-space: nowrap;}
+table.alloc th:first-child, table.alloc td:first-child {text-align: left;}
+table.alloc td {text-align: right; padding: 9px 10px; border-bottom: 1px solid #F0F2F5 !important;
+  color: #15181D; white-space: nowrap;}
+table.alloc tr.off td {color: #8A909B;}
+.sw {display: inline-block; width: 10px; height: 10px; border-radius: 2px;
+  margin-right: 10px; vertical-align: 0;}
+
+/* key numbers */
+.stats {display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid #E3E6EB; border-bottom: 1px solid #E3E6EB; margin: 1.6rem 0 .4rem;}
+.stat {padding: 16px 18px 15px; border-left: 1px solid #E3E6EB;}
+.stat:first-child {border-left: 0; padding-left: 0;}
+.stat .lbl {color: #5B6270; font-size: .88rem;}
+.stat .val {color: #15181D; font-size: 1.6rem; font-weight: 600; margin-top: 2px;
+  line-height: 1.2; white-space: nowrap;}
+.stat .sub {color: #5B6270; font-size: .84rem; margin-top: 3px;}
+.stat .sub.good {color: #0B7A3E;}
+.stat .sub.bad {color: #B42318;}
+@media (max-width: 800px) {
+  .stats {grid-template-columns: repeat(2, minmax(0, 1fr));}
+  .stat:nth-child(3) {border-left: 0; padding-left: 0;}
+  .stat:nth-child(n+3) {border-top: 1px solid #E3E6EB;}
+  .stat, .stat:first-child {padding: 12px 10px 11px 12px;}
+  .stat:nth-child(odd) {padding-left: 0;}
+  .stat .val {font-size: 1.2rem; white-space: normal;}
+  .head h1 {font-size: 1.8rem;}
+  .alloc-bar {height: 44px;}
+  .seg {padding: 0 8px; font-size: .82rem;}
+  .seg span.pct {display: none;}
+}
+
+/* explanation note */
+.note {border-left: 3px solid #1E3A5F; background: #F5F7FA; padding: 14px 18px;
+  margin: 1.2rem 0 .4rem; line-height: 1.6; color: #2B3038; max-width: 90ch;}
+
+/* section heads */
+.section h3 {margin: 1.9rem 0 0; font-weight: 600; font-size: 1.3rem; color: #15181D;}
+.section p {color: #5B6270; margin: 4px 0 10px; max-width: 80ch;}
+
+/* sidebar */
+.side-brand {font-size: 1.25rem; font-weight: 700; color: #15181D; line-height: 1.2;}
+.side-brand span {display: block; font-size: .9rem; font-weight: 400; color: #5B6270;}
+
+/* tabs: a clean navigation bar (plain text, thick underline on the active tab) */
+.stTabs {margin-top: 1.8rem;}
+.stTabs [role="tablist"] {display: flex !important; gap: 28px !important;
+  background: transparent !important; padding: 0 2px !important;
+  border-top: 1px solid #E3E6EB !important; border-bottom: 1px solid #E3E6EB !important;
+  border-radius: 0 !important; flex-wrap: wrap !important; overflow: visible !important;}
+.stTabs button[role="tab"] {padding: 14px 0 11px !important; height: auto !important;
+  background: transparent !important; border: 0 !important; border-radius: 0 !important;
+  border-bottom: 3px solid transparent !important; margin: 0 0 -1px !important;}
+.stTabs button[role="tab"] p {font-size: 1.02rem !important; font-weight: 600 !important;
+  color: #15181D !important; white-space: nowrap;}
+.stTabs button[role="tab"]:hover {border-bottom-color: #C9CED6 !important;}
+.stTabs button[role="tab"][aria-selected="true"] {border-bottom-color: #15181D !important;}
+.stTabs button[role="tab"]:focus-visible {outline: 2px solid #1E3A5F !important;
+  outline-offset: 2px;}
+.stTabs [data-baseweb="tab-highlight"], .stTabs [data-baseweb="tab-border"] {display: none !important;}
+@media (max-width: 800px) {
+  .stTabs [role="tablist"] {gap: 18px !important;}
+}
 </style>
 """
 st.markdown(CSS, unsafe_allow_html=True)
 
 pio.templates["stepup"] = go.layout.Template(layout=go.Layout(
-    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-    font=dict(color="#C9D1E0", family="Inter, Segoe UI, sans-serif", size=13),
+    paper_bgcolor="#FFFFFF", plot_bgcolor="#FFFFFF",
+    font=dict(color="#3B414B", family=CHART_FONT, size=13),
     colorway=list(COLORS.values()),
-    xaxis=dict(gridcolor="#232B3E", zerolinecolor="#232B3E"),
-    yaxis=dict(gridcolor="#232B3E", zerolinecolor="#232B3E"),
-    margin=dict(t=60, l=10, r=10, b=10),
-    legend=dict(bgcolor="rgba(0,0,0,0)"),
-    title=dict(font=dict(size=16, color="#F5F7FB"))))
-pio.templates.default = "plotly_dark+stepup"
+    xaxis=dict(gridcolor="#EEF0F3", zerolinecolor="#C9CED6", linecolor="#C9CED6",
+               ticks="", showline=True),
+    yaxis=dict(gridcolor="#EEF0F3", zerolinecolor="#C9CED6", linecolor="#C9CED6",
+               ticks=""),
+    margin=dict(t=56, l=10, r=16, b=10),
+    legend=dict(bgcolor="rgba(0,0,0,0)", orientation="h", yanchor="bottom", y=1.0,
+                xanchor="left", x=0, title_text=""),
+    title=dict(font=dict(size=15, color=INK), x=0, xanchor="left", y=0.98),
+    hoverlabel=dict(bgcolor="#FFFFFF", bordercolor="#D5D9E0",
+                    font=dict(color=INK, family=CHART_FONT))))
+pio.templates.default = "plotly_white+stepup"
+
+
+ROW_TICKS = dict(tickvals=[1e4, 1e5, 1e6, 1e7], ticktext=["10k", "100k", "1M", "10M"])
 
 
 def show(fig, height=None):
+    # Set the look directly on each chart: Streamlit was painting the plot area grey.
+    fig.update_layout(template="plotly_white+stepup", paper_bgcolor="#FFFFFF",
+                      plot_bgcolor="#FFFFFF",
+                      font=dict(color="#3B414B", family=CHART_FONT, size=13))
+    axis = dict(gridcolor="#EEF0F3", zerolinecolor="#C9CED6", linecolor="#C9CED6")
+    fig.update_xaxes(**axis)
+    fig.update_yaxes(**axis)
     if height:
         fig.update_layout(height=height)
-    st.plotly_chart(fig, theme=None)
+    if fig.layout.title.text and fig.layout.showlegend is not False:
+        fig.update_layout(margin=dict(t=80), legend=dict(y=1.02))
+    st.plotly_chart(fig, theme=None, config={"displaylogo": False})
 
 
 def html(s):
@@ -94,10 +179,12 @@ def rs(x):
     return f"Rs. {x:,.0f}"
 
 
-def card(label, value, sub="", sub_color="#4ADE80"):
-    return (f'<div class="kpi"><div class="kpi-label">{label}</div>'
-            f'<div class="kpi-value">{value}</div>'
-            f'<div class="kpi-sub" style="color:{sub_color}">{sub}</div></div>')
+def stats(items):
+    """items: list of (label, value, sub, tone) with tone in '', 'good', 'bad'."""
+    cells = "".join(f'<div class="stat"><div class="lbl">{lbl}</div><div class="val">{val}</div>'
+                    f'<div class="sub {tone}">{sub}</div></div>'
+                    for lbl, val, sub, tone in items)
+    return f'<div class="stats">{cells}</div>'
 
 
 def section(title, subtitle=""):
@@ -118,8 +205,8 @@ def get_curves():
 
 
 @st.cache_data
-def bootstrap_curves(n_boot=50, seed=0):
-    """Refit the curves on 50 random resamples of the data (with replacement)."""
+def bootstrap_curves(n_boot=N_BOOT, seed=0):
+    """Refit the curves on random resamples of the data (with replacement)."""
     data = load_data()
     rng = np.random.default_rng(seed)
     out = []
@@ -152,11 +239,11 @@ all_plats = list(curves)
 DEFAULTS = dict(budget=1_000_000, margin=0.50, slices=60, platforms=list(all_plats),
                 min_share=0, max_share=100)
 PRESETS = {
-    "⚖️ Balanced (default)": {},
-    "📺 Keep YouTube alive (min 5% each)": dict(min_share=5),
-    "🌙 Eid push (Rs. 2M budget)": dict(budget=2_000_000),
-    "🔍 Google paused": dict(platforms=[p for p in all_plats if p != "Google"]),
-    "🛡️ Spread risk (max 30% each)": dict(max_share=30),
+    "Balanced (default)": {},
+    "Keep YouTube alive (min 5% each)": dict(min_share=5),
+    "Eid push (Rs. 2M budget)": dict(budget=2_000_000),
+    "Google paused": dict(platforms=[p for p in all_plats if p != "Google"]),
+    "Spread risk (max 30% each)": dict(max_share=30),
 }
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
@@ -170,8 +257,8 @@ def apply_preset():
 
 
 with st.sidebar:
-    html('<div class="side-brand">👟 StepUp<span>BUDGET LAB</span></div>')
-    st.selectbox("Quick scenario", list(PRESETS), key="preset", on_change=apply_preset)
+    html('<div class="side-brand">StepUp Footwear<span>Ad budget optimizer</span></div>')
+    st.selectbox("Scenario", list(PRESETS), key="preset", on_change=apply_preset)
     st.divider()
     budget = st.number_input("Monthly ad budget (Rs.)", min_value=100_000,
                              max_value=50_000_000, step=100_000, key="budget")
@@ -185,7 +272,8 @@ with st.sidebar:
                           key="min_share") / 100
     max_share = st.slider("Maximum share per platform (%)", min_value=20, max_value=100,
                           key="max_share") / 100
-    st.caption("⚠️ All data is simulated. Assumptions are listed in the About tab.")
+    st.caption("All data is simulated for a fictional brand. The assumptions are listed in "
+               "the About tab.")
 
 if not platforms:
     st.error("Pick at least one platform.")
@@ -210,8 +298,8 @@ avg_roas = (df.groupby("platform", observed=True)["revenue"].sum()
 best = str(avg_roas.idxmax())
 strategies = {
     "Optimizer": alloc,
-    "Equal split": {p: budget / len(all_plats) for p in all_plats},
     "Last year's split": {p: budget * hist[p] for p in all_plats},
+    "Equal split": {p: budget / len(all_plats) for p in all_plats},
     f"All on {best}": {p: (budget if p == best else 0.0) for p in all_plats},
 }
 comp = []
@@ -227,96 +315,103 @@ opt_gain = comp.loc[comp.strategy == "Optimizer", "vs_equal_%"].iloc[0]
 allbest_rev = comp.loc[comp.strategy == f"All on {best}", "revenue"].iloc[0]
 breakeven = 1 / margin
 
-# ---------------- HERO ----------------
+# ---------------- PAGE HEAD: the answer first ----------------
+order = rec.sort_values("spend", ascending=False)
+funded = order[order.spend > 1]
+segs = []
+for _, r in funded.iterrows():
+    p = r["platform"]
+    fg = INK if p in DARK_TEXT_ON else "#FFFFFF"
+    label = (f'{p}<span class="pct">{r["share_%"]:.1f}%</span>' if r["share_%"] >= 9
+             else (f'{r["share_%"]:.0f}%' if r["share_%"] >= 4 else ""))
+    segs.append(f'<div class="seg" style="flex:{r["share_%"]:.4f} 0 0;background:{COLORS[p]};'
+                f'color:{fg}" title="{p}: {r["share_%"]:.1f}%">{label}</div>')
+rows_html = []
+for _, r in order.iterrows():
+    p = r["platform"]
+    on = r["spend"] > 1
+    roas_txt = f"{r['ROAS']:.2f}" if on else "Not funded"
+    rev_txt = rs(r["revenue"]) if on else "–"
+    rows_html.append(
+        f'<tr class="{"" if on else "off"}"><td><span class="sw" style="background:{COLORS[p]}">'
+        f'</span>{p}</td><td>{r["share_%"]:.1f}%</td><td>{rs(r["spend"])}</td>'
+        f'<td>{rev_txt}</td><td>{roas_txt}</td>'
+        f'<td>{r["marginal_ROAS"]:.2f}</td></tr>')
+
 html("".join([
-    '<div class="hero">',
-    '<div class="hero-kicker">STEPUP FOOTWEAR · FICTIONAL BRAND · PAKISTAN</div>',
+    '<div class="head">',
+    '<p class="head-brand"><b>StepUp Footwear</b>, a fictional Pakistani shoe brand. '
+    'All data is simulated.</p>',
     f'<h1>Where should the next {rs(budget)} go?</h1>',
-    '<p>An optimizer that learns each platform\'s diminishing returns and splits the ad '
-    'budget across Facebook, Instagram, Google, TikTok and YouTube for maximum revenue.</p>',
-    '<span class="badge">📊 Simulated data</span>',
-    '<span class="badge">🧮 SciPy optimizer</span>',
-    '<span class="badge">✅ Validated vs true optimum</span>',
-    '<span class="badge">⚡ Pandas · Hadoop · Spark</span>',
+    '<p class="lede">The optimizer learns how fast each platform runs out of steam, then splits '
+    'the monthly budget so every rupee goes where it earns the most.</p>',
+    f'<div class="alloc-bar">{"".join(segs)}</div>',
+    '<div class="alloc-wrap"><table class="alloc"><thead><tr><th>Platform</th><th>Share</th>'
+    '<th>Monthly spend</th><th>Expected revenue</th><th>ROAS</th>'
+    '<th>Return on the next rupee</th></tr></thead>',
+    f'<tbody>{"".join(rows_html)}</tbody></table></div>',
+    stats([
+        ("Expected revenue", rs(tot_rev), f"ROAS {tot_rev / budget:.2f}", ""),
+        ("Expected profit", rs(tot_profit), f"after {margin:.0%} margin and ad spend", ""),
+        ("Gain vs equal split", f"{opt_gain:+.1f}%", f"{rs(tot_rev - eq_rev)} more revenue",
+         "good" if opt_gain >= 0 else "bad"),
+        (f"Gain vs all on {best}", f"{(tot_rev / allbest_rev - 1) * 100:+.0f}%",
+         "why picking the best ROAS fails", ""),
+    ]),
     '</div>']))
 
-tabs = st.tabs(["🎯 Recommendation", "📈 Response curves", "🔍 KPI explorer",
-                "✅ Validation", "⚡ Big Data benchmark", "ℹ️ About & limitations"])
+tabs = st.tabs(["Recommendation", "Response curves", "KPI explorer",
+                "Validation", "Big Data benchmark", "About & limitations"])
 
 # ---------------- TAB 1: RECOMMENDATION ----------------
 with tabs[0]:
-    c = st.columns(4)
-    c[0].markdown(card("Expected revenue", rs(tot_rev), f"ROAS {tot_rev / budget:.2f}"),
-                  unsafe_allow_html=True)
-    c[1].markdown(card("Expected profit", rs(tot_profit),
-                       f"after {margin:.0%} margin & ad spend", MUTED), unsafe_allow_html=True)
-    c[2].markdown(card("Gain vs equal split", f"{opt_gain:+.1f}%",
-                       f"{rs(tot_rev - eq_rev)} more revenue"), unsafe_allow_html=True)
-    c[3].markdown(card(f"vs all on {best}", f"{(tot_rev / allbest_rev - 1) * 100:+.0f}%",
-                       "why 'just pick the best ROAS' fails", "#F87171"), unsafe_allow_html=True)
-
-    section("The plan", "Recommended monthly spend per platform")
-    order = rec.sort_values("spend", ascending=False)
-    pc = st.columns(len(order))
-    for col, (_, r) in zip(pc, order.iterrows()):
-        color = COLORS[r["platform"]]
-        status = f"ROAS {r['ROAS']:.2f}" if r["spend"] > 1 else "not funded"
-        col.markdown(
-            f'<div class="plat" style="border-top-color:{color}">'
-            f'<div class="plat-name">{r["platform"]}</div>'
-            f'<div class="plat-share" style="color:{color}">{r["share_%"]:.1f}%</div>'
-            f'<div class="plat-amt">{rs(r["spend"])}</div>'
-            f'<div class="plat-amt">{status}</div></div>', unsafe_allow_html=True)
-
-    funded = rec[rec.spend > 1].sort_values("spend", ascending=False)
     names = funded.platform.tolist()
     zero = [p for p in platforms if alloc[p] <= 1]
     lo, hi = funded.marginal_ROAS.min(), funded.marginal_ROAS.max()
-    why = f"<b>💡 Why this split?</b><br>Lead with <b>{names[0]}</b>"
+    back = f"Rs. {lo:.2f}" if f"{lo:.2f}" == f"{hi:.2f}" else f"Rs. {lo:.2f} to {hi:.2f}"
+    why = f"<b>Why this split?</b> Lead with {names[0]}"
     if len(names) > 1:
-        why += f" and <b>{names[1]}</b>"
+        why += f" and {names[1]}"
     why += (". Each platform gets money until its <i>next</i> rupee earns about the same as "
-            f"everywhere else: <b>Rs. {lo:.2f}–{hi:.2f}</b> back per rupee. ")
+            f"everywhere else: about <b>{back}</b> back per rupee. ")
     if zero:
         verb = "gets" if len(zero) == 1 else "get"
-        why += f"<b>{', '.join(zero)}</b> {verb} nothing: the first rupee there earns less than that. "
-    why += f"Break-even at a {margin:.0%} margin is ROAS <b>{breakeven:.2f}</b>."
-    html(f'<div class="why">{why}</div>')
+        why += f"{', '.join(zero)} {verb} nothing, because its first rupee earns less than that. "
+    why += f"At a {margin:.0%} margin, break-even is a ROAS of <b>{breakeven:.2f}</b>."
+    html(f'<div class="note">{why}</div>')
     if lo < breakeven:
-        st.warning("Some of the last rupees **lose money** after product costs: this budget is "
-                   "bigger than the profit-maximising level. See 📈 Response curves.")
+        st.warning("Some of the last rupees **lose money** after product costs, so this budget is "
+                   "bigger than the profit-maximising level. See the Response curves tab.")
 
-    left, right = st.columns(2)
-    with left:
-        fig = px.pie(rec[rec.spend > 1], names="platform", values="spend", hole=0.62,
-                     color="platform", color_discrete_map=COLORS)
-        fig.update_traces(textinfo="percent", marker=dict(line=dict(color="#0B0F19", width=3)))
-        fig.add_annotation(text=f"<b>{rs(budget)}</b><br>per month", showarrow=False,
-                           font=dict(size=15, color="#F5F7FB"))
-        fig.update_layout(title="Budget split", legend=dict(orientation="h", y=-0.1))
-        show(fig, 420)
-    with right:
-        bar_colors = [ACCENT if s == "Optimizer" else "#3A4560" for s in comp.strategy]
-        fig = go.Figure(go.Bar(x=comp.strategy, y=comp.revenue, marker_color=bar_colors,
-                               text=comp["vs_equal_%"].map(lambda v: f"{v:+.1f}% vs equal"),
-                               textposition="outside"))
-        fig.update_layout(title="Optimizer vs simple strategies",
-                          yaxis_title="Expected revenue (Rs.)",
-                          yaxis_range=[0, comp.revenue.max() * 1.18])
-        show(fig, 420)
+    section("Optimizer vs simple strategies",
+            "Expected monthly revenue for the same budget, split four different ways")
+    cmp = comp.iloc[::-1]
+    fig = go.Figure(go.Bar(
+        y=cmp.strategy, x=cmp.revenue, orientation="h",
+        marker_color=[NAVY if s == "Optimizer" else GREY_LIGHT for s in cmp.strategy],
+        text=[f"{rs(v)}   {g:+.1f}% vs equal" for v, g in zip(cmp.revenue, cmp["vs_equal_%"])],
+        textposition="outside", cliponaxis=False,
+        hovertemplate="%{y}: Rs. %{x:,.0f}<extra></extra>"))
+    fig.update_layout(xaxis_title="Expected revenue (Rs.)", showlegend=False,
+                      xaxis_range=[0, comp.revenue.max() * 1.38], margin=dict(t=10),
+                      yaxis=dict(showline=False, ticksuffix="   "), xaxis=dict(showgrid=True))
+    show(fig, 260)
+    st.caption(f"Putting everything on {best}, the platform with the best average ROAS, "
+               "earns the least: diminishing returns punish putting all eggs in one basket.")
 
-    with st.expander("📋 Detailed table + download"):
+    with st.expander("Detailed table and download"):
         show_t = rec[["platform", "share_%", "spend", "revenue", "ROAS",
                       "marginal_ROAS", "profit"]]
         st.dataframe(show_t.style.format({
             "share_%": "{:.1f}%", "spend": "Rs. {:,.0f}", "revenue": "Rs. {:,.0f}",
             "ROAS": "{:.2f}", "marginal_ROAS": "{:.2f}", "profit": "Rs. {:,.0f}"},
             na_rep="–"), hide_index=True)
-        st.download_button("⬇️ Download plan (CSV)", show_t.to_csv(index=False),
+        st.download_button("Download plan (CSV)", show_t.to_csv(index=False),
                            "stepup_budget_plan.csv", "text/csv")
 
     section("How sure are we?",
-            "The whole fit + optimisation rerun on 50 bootstrap resamples of the data")
+            f"The whole fit and optimisation rerun on {N_BOOT} bootstrap resamples of the data. "
+            "Dots are the recommended shares; lines show the 90% range.")
     boots = bootstrap_curves()
     shares = []
     for bc in boots:
@@ -327,46 +422,64 @@ with tabs[0]:
                        "recommended_%": [alloc[p] / budget * 100 for p in all_plats],
                        "low_%": sh.quantile(0.05).to_numpy(),
                        "high_%": sh.quantile(0.95).to_numpy()})
-    ci["plus"] = (ci["high_%"] - ci["recommended_%"]).clip(lower=0)
-    ci["minus"] = (ci["recommended_%"] - ci["low_%"]).clip(lower=0)
-    fig = px.bar(ci, x="platform", y="recommended_%", error_y="plus", error_y_minus="minus",
-                 color="platform", color_discrete_map=COLORS)
-    fig.update_layout(showlegend=False, yaxis_title="Share of budget (%)", xaxis_title="",
-                      title=f"Recommended share with 90% range ({len(boots)} resamples)")
-    show(fig, 380)
-    st.dataframe(ci[["platform", "recommended_%", "low_%", "high_%"]].style.format(
+    ci = ci.set_index("platform").loc[order.platform.tolist()[::-1]].reset_index()
+    fig = go.Figure()
+    for _, r in ci.iterrows():
+        p = r["platform"]
+        fig.add_trace(go.Scatter(
+            x=[r["recommended_%"]], y=[p], mode="markers", name=p, showlegend=False,
+            marker=dict(size=12, color=COLORS[p], line=dict(color="#FFFFFF", width=2)),
+            error_x=dict(type="data", symmetric=False, thickness=2, width=6, color=COLORS[p],
+                         array=[max(r["high_%"] - r["recommended_%"], 0)],
+                         arrayminus=[max(r["recommended_%"] - r["low_%"], 0)]),
+            hovertemplate=(f"{p}: %{{x:.1f}}% (90% range {r['low_%']:.1f}% to "
+                           f"{r['high_%']:.1f}%)<extra></extra>")))
+    fig.update_layout(xaxis_title="Share of budget (%)", margin=dict(t=10),
+                      xaxis_range=[0, max(ci["high_%"].max() * 1.12, 5)])
+    show(fig, 300)
+    st.dataframe(ci[["platform", "recommended_%", "low_%", "high_%"]].iloc[::-1].style.format(
         {"recommended_%": "{:.1f}%", "low_%": "{:.1f}%", "high_%": "{:.1f}%"}), hide_index=True)
-    st.caption("Ranges show uncertainty from the limited sample (10k rows) only. They do NOT "
-               "cover wrong assumptions or a wrong curve shape. In the self-check, 2 of 5 true "
-               "shares fell just outside these ranges, so treat them as a guide.")
+    cov_file = PROC / "bootstrap_coverage_summary.csv"
+    cov_note = ""
+    if cov_file.exists():
+        cov = pd.read_csv(cov_file)
+        c200 = cov[cov.n_boot == cov.n_boot.max()]
+        cov_note = (f" Tested on 30 fresh simulated datasets, the true best share fell inside the "
+                    f"range {c200.percentile_coverage.mean():.0f}% of the time (target 90%), "
+                    f"so the ranges are honest. YouTube, whose true share sits next to zero, "
+                    f"was the weakest at {c200.loc[c200.platform == 'YouTube', 'percentile_coverage'].iloc[0]:.0f}%.")
+    st.caption("These ranges only show uncertainty from having 10k rows of data. They do NOT "
+               "cover a wrong curve shape or wrong assumptions." + cov_note)
 
 # ---------------- TAB 2: RESPONSE CURVES ----------------
 with tabs[1]:
     section("Diminishing returns per platform",
-            "Expected monthly revenue for a given monthly spend. Lines flatten as spend grows. "
-            "⭐ = recommended spend.")
+            "Expected monthly revenue for a given monthly spend. Each line flattens as spend "
+            "grows. Dots mark the recommended spend.")
     xs = np.linspace(0, budget, 200)
     fig = go.Figure()
-    for p in all_plats:
+    for p in order.platform:
         cv = curves[p]
         fig.add_trace(go.Scatter(x=xs, y=slices * response(xs / slices, cv["a"], cv["h"]),
-                                 name=p, line=dict(color=COLORS[p], width=3)))
+                                 name=p, line=dict(color=COLORS[p], width=2),
+                                 hovertemplate=f"{p}: spend Rs. %{{x:,.0f}} → revenue "
+                                               f"Rs. %{{y:,.0f}}<extra></extra>"))
         if alloc[p] > 1:
             fig.add_trace(go.Scatter(
                 x=[alloc[p]], y=[slices * response(alloc[p] / slices, cv["a"], cv["h"])],
                 mode="markers", showlegend=False, name=f"{p} pick",
-                marker=dict(size=16, color=COLORS[p], symbol="star",
-                            line=dict(color="#fff", width=1))))
+                marker=dict(size=12, color=COLORS[p], line=dict(color="#FFFFFF", width=2)),
+                hovertemplate=f"{p} recommended: Rs. %{{x:,.0f}}<extra></extra>"))
     fig.update_layout(xaxis_title="Monthly spend on platform (Rs.)",
-                      yaxis_title="Expected revenue (Rs.)")
+                      yaxis_title="Expected revenue (Rs.)", hovermode="closest")
     show(fig, 460)
 
     fit = pd.DataFrame(curves).T.reset_index().rename(columns={"index": "platform"})
     fit = fit[["platform", "a", "a_se", "h", "h_se", "rows"]]
     st.dataframe(fit.style.format({"a": "{:.2f}", "a_se": "±{:.2f}", "h": "{:,.0f}",
                                    "h_se": "±{:,.0f}"}), hide_index=True)
-    st.caption("a = ROAS at very small spend · h = spend per slice where efficiency halves · "
-               "± = standard error of the fit.")
+    st.caption("a is the ROAS at very small spend, h is the spend per slice where efficiency "
+               "halves, and ± is the standard error of the fit.")
 
     section("Is this even the right total budget?",
             "Expected profit if the whole budget is split optimally")
@@ -374,15 +487,17 @@ with tabs[1]:
                           float(max(5_000_000, 2 * budget)))
     top = pcurve.loc[pcurve.profit.idxmax()]
     fig = go.Figure(go.Scatter(x=pcurve.budget, y=pcurve.profit, mode="lines",
-                               line=dict(color=ACCENT, width=3), fill="tozeroy",
-                               fillcolor="rgba(255,107,53,0.15)"))
-    fig.add_vline(x=budget, line_dash="dash", line_color="#C9D1E0",
-                  annotation_text="your budget")
-    fig.add_vline(x=top.budget, line_dash="dot", line_color="#4ADE80",
-                  annotation_text="profit peak")
+                               line=dict(color=NAVY, width=2), showlegend=False,
+                               hovertemplate="Budget Rs. %{x:,.0f} → profit Rs. %{y:,.0f}"
+                                             "<extra></extra>"))
+    fig.add_vline(x=budget, line_dash="dash", line_color=GREY, line_width=1,
+                  annotation_text="Your budget", annotation_font_color=INK_2)
+    fig.add_vline(x=top.budget, line_dash="dot", line_color=GOOD, line_width=1,
+                  annotation_text="Profit peak", annotation_font_color=GOOD,
+                  annotation_position="top left")
     fig.update_layout(xaxis_title="Total monthly budget (Rs.)",
-                      yaxis_title="Expected profit (Rs.)")
-    show(fig, 420)
+                      yaxis_title="Expected profit (Rs.)", margin=dict(t=30))
+    show(fig, 400)
     st.write(f"Under these assumptions, profit peaks near **{rs(top.budget)}** "
              f"(about {rs(top.profit)} profit). Beyond that, extra ad spend earns back "
              f"less than it costs.")
@@ -404,100 +519,175 @@ with tabs[2]:
     metric = c2.selectbox("Metric", ["ROAS", "CTR_%", "CVR_%", "CPC", "CPA"])
     t = kpi_table(df, ["platform", dim])
     pivot = t.pivot(index="platform", columns=dim, values=metric)
-    scale = "RdYlGn_r" if metric in ["CPC", "CPA"] else "RdYlGn"
-    fig = px.imshow(pivot, text_auto=".2f", aspect="auto", color_continuous_scale=scale)
-    fig.update_layout(title=f"{metric} by platform × {dim}")
-    show(fig, 420)
-    st.caption("Green = better. For CPC and CPA lower is better, so the colours are reversed.")
+    fig = px.imshow(pivot, text_auto=".2f", aspect="auto", color_continuous_scale="Blues")
+    fig.update_traces(xgap=2, ygap=2)
+    fig.update_layout(title=f"{metric} by platform and {dim}", xaxis_title="", yaxis_title="",
+                      coloraxis_colorbar=dict(title="", thickness=12))
+    show(fig, 400)
+    st.caption("Darker means a higher value. For CPC and CPA, lower is better.")
 
     m = kpi_table(df, ["month", "platform"])
-    fig = px.line(m, x="month", y=metric, color="platform", markers=True,
-                  color_discrete_map=COLORS)
-    fig.update_traces(line=dict(width=3))
-    fig.update_layout(title=f"Monthly {metric}")
+    fig = go.Figure()
+    for p in order.platform:
+        mp = m[m.platform == p]
+        fig.add_trace(go.Scatter(x=mp.month, y=mp[metric], name=p, mode="lines+markers",
+                                 line=dict(color=COLORS[p], width=2), marker=dict(size=7)))
+    fig.update_layout(title=f"Monthly {metric}", hovermode="x unified")
     show(fig, 420)
-    st.caption("Peaks match the simulated Eid ul Fitr (Mar), Eid ul Adha (late May–Jun) "
+    st.caption("Peaks match the simulated Eid ul Fitr (Mar), Eid ul Adha (late May to Jun) "
                "and 11.11 (Nov) campaigns.")
 
 # ---------------- TAB 4: VALIDATION ----------------
 with tabs[3]:
-    section("Self-check: does the optimizer find the TRUE best split?",
-            "The data is simulated, so the true best split is known. Data was regenerated 5 "
-            "times at 10k, 100k and 1M rows, and each result was scored against the truth.")
+    section("Does the optimizer find the true best split?",
+            "The data is simulated, so the true best split is known. The data was regenerated "
+            "5 times at 10k, 100k and 1M rows, and each result was scored against the truth.")
     vs_file, tr_file = PROC / "validation_summary.csv", PROC / "true_optimum.csv"
     if vs_file.exists():
         vs = pd.read_csv(vs_file)
-        c = st.columns(3)
-        c[0].markdown(card("Optimizer at 10k rows", f"{vs.optimizer_pct_mean.iloc[0]:.2f}%",
-                           "of the true best revenue"), unsafe_allow_html=True)
-        c[1].markdown(card("Equal split", f"{vs.equal_pct.iloc[0]:.1f}%",
-                           "of the true best revenue", MUTED), unsafe_allow_html=True)
-        c[2].markdown(card("Share error, 10k → 1M rows",
-                           f"{vs.share_error_pp_mean.iloc[0]:.2f} → "
-                           f"{vs.share_error_pp_mean.iloc[-1]:.2f} pp",
-                           "more data = more precise split"), unsafe_allow_html=True)
-        c1, c2 = st.columns(2)
-        with c1:
-            fig = px.line(vs, x="rows", y="share_error_pp_mean", log_x=True, markers=True,
-                          error_y="share_error_pp_std")
-            fig.update_traces(line=dict(color=ACCENT, width=3), marker=dict(size=10))
-            fig.update_layout(xaxis_title="Rows of data (log scale)",
-                              yaxis_title="Avg share error (pp)",
-                              title="More data → more precise split")
-            show(fig, 400)
-        with c2:
-            long = vs.melt(id_vars="rows",
-                           value_vars=["optimizer_pct_mean", "lastyear_pct", "equal_pct"],
-                           var_name="strategy", value_name="pct_of_best")
-            long["strategy"] = long.strategy.map({"optimizer_pct_mean": "Optimizer",
-                                                  "lastyear_pct": "Last year's split",
-                                                  "equal_pct": "Equal split"})
-            long["rows"] = long.rows.map(lambda r: f"{r:,}")
-            fig = px.bar(long, x="rows", y="pct_of_best", color="strategy", barmode="group",
-                         color_discrete_map={"Optimizer": ACCENT,
-                                             "Last year's split": "#7B2FF7",
-                                             "Equal split": "#3A4560"})
-            fig.update_layout(yaxis_range=[90, 100.5], xaxis_title="Rows of data",
-                              yaxis_title="% of true best revenue",
-                              title="Revenue captured vs the true best")
-            show(fig, 400)
-        st.dataframe(vs, hide_index=True)
+        html(stats([
+            ("Optimizer at 10k rows", f"{vs.optimizer_pct_mean.iloc[0]:.2f}%",
+             "of the true best revenue", ""),
+            ("Last year's split", f"{vs.lastyear_pct.iloc[0]:.1f}%",
+             "of the true best revenue", ""),
+            ("Equal split", f"{vs.equal_pct.iloc[0]:.1f}%", "of the true best revenue", ""),
+            ("Share error, 10k to 1M rows",
+             f"{vs.share_error_pp_mean.iloc[0]:.2f} → {vs.share_error_pp_mean.iloc[-1]:.2f} pp",
+             "more data gives a more precise split", ""),
+        ]))
+        fig = go.Figure(go.Scatter(
+            x=vs.rows, y=vs.share_error_pp_mean, mode="lines+markers", showlegend=False,
+            line=dict(color=NAVY, width=2), marker=dict(size=9),
+            error_y=dict(array=vs.share_error_pp_std, thickness=1.5, width=5, color=NAVY),
+            hovertemplate="%{x:,} rows: %{y:.2f} pp<extra></extra>"))
+        fig.update_xaxes(**ROW_TICKS)
+        fig.update_layout(xaxis_type="log", xaxis_title="Rows of data (log scale)",
+                          yaxis_title="Average share error (pp)", yaxis_rangemode="tozero",
+                          title="Each 10× more data cuts the error about 3×")
+        show(fig, 360)
+        with st.expander("Validation table"):
+            st.dataframe(vs.rename(columns={
+                "rows": "Rows", "optimizer_pct_mean": "Optimizer (% of best)",
+                "optimizer_pct_std": "Optimizer spread", "lastyear_pct": "Last year's split (%)",
+                "equal_pct": "Equal split (%)", "share_error_pp_mean": "Share error (pp)",
+                "share_error_pp_std": "Error spread (pp)"}).style.format(
+                {"Rows": "{:,}", "Optimizer (% of best)": "{:.2f}%", "Optimizer spread": "±{:.2f}",
+                 "Last year's split (%)": "{:.1f}%", "Equal split (%)": "{:.1f}%",
+                 "Share error (pp)": "{:.2f}", "Error spread (pp)": "±{:.2f}"}),
+                hide_index=True)
     else:
         st.info("Run src/optimizer/validate.py to create the validation results.")
     if tr_file.exists():
         tr = pd.read_csv(tr_file)
         tr["fitted_a (10k)"] = tr.platform.map(lambda p: curves[p]["a"])
         tr["fitted_h (10k)"] = tr.platform.map(lambda p: curves[p]["h"])
-        st.write("**True vs fitted curve parameters**")
-        st.dataframe(tr.round(2), hide_index=True)
-    st.warning("**Honest caveat:** this is a best-case test. The optimizer assumes the same "
-               "curve shape the generator used, and simulated spend is random. Real data has "
-               "wrong-shaped curves, seasonality and spend that follows demand, so real "
-               "accuracy would be lower.")
+        with st.expander("True vs fitted curve parameters"):
+            st.dataframe(tr.round(2), hide_index=True)
+
+    section("Hard mode: what if the real curve has a different shape?",
+            "The test above is a best case, because the data uses the same curve shape the "
+            "optimizer assumes. Here the data comes from two other shapes: an exponential "
+            "curve that saturates faster, and an S-curve where small budgets barely work. "
+            "The optimizer still fits its usual curve.")
+    hm_file = PROC / "hard_mode_summary.csv"
+    if hm_file.exists():
+        hm = pd.read_csv(hm_file)
+        hm["shape_lbl"] = hm["shape"].map({"hyperbolic": "Same as assumed",
+                                           "exponential": "Exponential", "s_curve": "S-curve"})
+        s10 = hm[hm.rows == hm.rows.min()].set_index("shape_lbl")
+        html(stats([
+            ("Same shape, 10k rows", f"{s10.loc['Same as assumed', 'optimizer_pct_mean']:.2f}%",
+             "of the true best revenue", ""),
+            ("Exponential, 10k rows", f"{s10.loc['Exponential', 'optimizer_pct_mean']:.2f}%",
+             f"equal split: {s10.loc['Exponential', 'equal_pct']:.1f}%", ""),
+            ("S-curve, 10k rows", f"{s10.loc['S-curve', 'optimizer_pct_mean']:.2f}%",
+             f"equal split: {s10.loc['S-curve', 'equal_pct']:.1f}%", ""),
+            ("Worst single run", f"{hm.optimizer_pct_min.min():.1f}%",
+             "S-curve, 10k rows", "bad"),
+        ]))
+        c1, c2 = st.columns(2)
+        with c1:
+            long = s10.reset_index().melt(
+                id_vars="shape_lbl", value_vars=["optimizer_pct_mean", "lastyear_pct", "equal_pct"],
+                var_name="strategy", value_name="pct")
+            long["strategy"] = long.strategy.map({"optimizer_pct_mean": "Optimizer",
+                                                  "lastyear_pct": "Last year's split",
+                                                  "equal_pct": "Equal split"})
+            fig = go.Figure()
+            for strat, col, size in [("Equal split", GREY_LIGHT, 11),
+                                     ("Last year's split", GREY, 11), ("Optimizer", NAVY, 13)]:
+                d = long[long.strategy == strat]
+                fig.add_trace(go.Scatter(
+                    x=d.pct, y=d.shape_lbl, mode="markers", name=strat,
+                    marker=dict(size=size, color=col, line=dict(color="#FFFFFF", width=2)),
+                    hovertemplate=f"{strat}, %{{y}}: %{{x:.1f}}%<extra></extra>"))
+            fig.update_layout(title="Revenue captured at 10k rows (% of true best)",
+                              xaxis_title="% of the true best revenue",
+                              yaxis=dict(categoryorder="array",
+                                         categoryarray=["S-curve", "Exponential",
+                                                        "Same as assumed"]))
+            show(fig, 340)
+        with c2:
+            fig = go.Figure()
+            for lbl, col in SHAPE_COLORS.items():
+                d = hm[hm.shape_lbl == lbl]
+                fig.add_trace(go.Scatter(
+                    x=d.rows, y=d.share_error_pp_mean, name=lbl, mode="lines+markers",
+                    line=dict(color=col, width=2), marker=dict(size=8),
+                    hovertemplate=f"{lbl}, %{{x:,}} rows: %{{y:.2f}} pp<extra></extra>"))
+            fig.update_xaxes(**ROW_TICKS)
+            fig.update_layout(title="Share error vs data size",
+                              xaxis_type="log", xaxis_title="Rows of data (log scale)",
+                              yaxis_title="Average share error (pp)", yaxis_rangemode="tozero")
+            show(fig, 340)
+        st.markdown(
+            "- **Robust where it matters:** even with the wrong curve shape, the optimizer gets "
+            "96% or more of the best revenue on average and always beats the equal and "
+            "last-year splits. The gap is biggest on the S-curve, where spreading money thin "
+            "wastes most of it.\n"
+            "- **Weak spot:** with the right shape, more data keeps shrinking the error. With the "
+            "wrong shape it gets stuck (about 0.8 pp exponential, 1.6 pp S-curve). More data "
+            "cannot fix a wrong model; only a better curve can.")
+        with st.expander("Hard mode table"):
+            st.dataframe(hm[["shape_lbl", "rows", "optimizer_pct_mean", "optimizer_pct_min",
+                             "lastyear_pct", "equal_pct", "share_error_pp_mean",
+                             "share_error_pp_std"]].rename(columns={
+                "shape_lbl": "True curve shape", "rows": "Rows",
+                "optimizer_pct_mean": "Optimizer (% of best)", "optimizer_pct_min": "Worst run (%)",
+                "lastyear_pct": "Last year's split (%)", "equal_pct": "Equal split (%)",
+                "share_error_pp_mean": "Share error (pp)",
+                "share_error_pp_std": "Error spread (pp)"}).style.format(
+                {"Rows": "{:,}", "Optimizer (% of best)": "{:.2f}%", "Worst run (%)": "{:.2f}%",
+                 "Last year's split (%)": "{:.1f}%", "Equal split (%)": "{:.1f}%",
+                 "Share error (pp)": "{:.2f}", "Error spread (pp)": "±{:.2f}"}),
+                hide_index=True)
+    else:
+        st.info("Run src/optimizer/hard_mode.py to create the hard mode results.")
+    st.warning("**Still a simulation:** spend here is random and there is no seasonality in the "
+               "optimizer. Real data has spend that follows demand, so real accuracy would "
+               "be lower.")
 
 # ---------------- TAB 5: BIG DATA BENCHMARK ----------------
 with tabs[4]:
     section("Pandas vs Hadoop MapReduce vs Spark",
-            "Same job on every engine: read the CSV, group by platform + campaign, sum 5 "
+            "Same job on every engine: read the CSV, group by platform and campaign, sum 5 "
             "metrics. Google Colab free tier (1 machine, 2 cores, 12 GB RAM), median of 3 runs, "
             "Hadoop 3.5.0 Streaming (local mode), PySpark 4.0.5 local[*]. All engines produced "
             "identical totals at every size.")
     b_file, big_file = PROC / "benchmark_results.csv", PROC / "benchmark_100M.csv"
-    eng_colors = {"Pandas": "#4ADE80", "Hadoop MapReduce": "#FBBF24", "Spark": ACCENT}
 
     if big_file.exists():
         big = pd.read_csv(big_file)
-        st.markdown("**🔥 Stress test: 100M rows (8 GB file)**")
-        cols = st.columns(len(big))
-        for col, (_, r) in zip(cols, big.iterrows()):
+        items = []
+        for _, r in big.iterrows():
             if r["status"] == "OK":
-                col.markdown(card(r["engine"], f"{r['seconds']:.0f} s",
-                                  "✓ correct totals" if r["correct"] else "✗ wrong totals"),
-                             unsafe_allow_html=True)
+                items.append((r["engine"], f"{r['seconds']:.0f} s",
+                              "correct totals" if r["correct"] else "wrong totals", ""))
             else:
-                col.markdown(card(r["engine"], "Crashed", "out of memory", "#F87171"),
-                             unsafe_allow_html=True)
-        st.caption(f"The 100M file is the 10M file **replicated 10×** (tests scale, not new "
+                items.append((r["engine"], "Crashed", "out of memory", "bad"))
+        st.markdown("**Stress test: 100M rows (8 GB file)**")
+        html(stats(items))
+        st.caption(f"The 100M file is the 10M file replicated 10× (it tests scale, not new "
                    f"information). Plain Pandas ran in a separate process with a "
                    f"{big.memory_cap_gb.iloc[0]} GB memory cap (free RAM at the time). Chunked "
                    f"Pandas reads 2M rows at a time. 1 run each.")
@@ -506,27 +696,39 @@ with tabs[4]:
         b = pd.read_csv(b_file)
         c1, c2 = st.columns(2)
         with c1:
-            fig = px.line(b, x="rows", y="median_s", color="engine", markers=True,
-                          log_x=True, log_y=True, color_discrete_map=eng_colors)
-            fig.update_traces(line=dict(width=3), marker=dict(size=10))
-            fig.update_layout(xaxis_title="Rows (log scale)", yaxis_title="Seconds (log scale)",
-                              title="Read + aggregate time, 10k → 10M rows")
-            show(fig, 420)
+            fig = go.Figure()
+            for eng, col in ENGINE_COLORS.items():
+                d = b[b.engine == eng]
+                fig.add_trace(go.Scatter(x=d.rows, y=d.median_s, name=eng, mode="lines+markers",
+                                         line=dict(color=col, width=2), marker=dict(size=8),
+                                         hovertemplate=f"{eng}, %{{x:,}} rows: %{{y:.2f}} s"
+                                                       f"<extra></extra>"))
+            fig.update_xaxes(**ROW_TICKS)
+            fig.update_yaxes(dtick=1)
+            fig.update_layout(xaxis_type="log", yaxis_type="log",
+                              xaxis_title="Rows (log scale)", yaxis_title="Seconds (log scale)",
+                              title="Read and aggregate time, 10k to 10M rows")
+            show(fig, 400)
         with c2:
             b["rows_lbl"] = b.rows.map(lambda r: f"{r:,}")
-            fig = px.bar(b, x="rows_lbl", y="rows_per_s", color="engine", barmode="group",
-                         color_discrete_map=eng_colors)
-            fig.update_layout(xaxis_title="Rows", yaxis_title="Rows processed per second",
+            fig = go.Figure()
+            for eng, col in ENGINE_COLORS.items():
+                d = b[b.engine == eng]
+                fig.add_trace(go.Bar(x=d.rows_lbl, y=d.rows_per_s, name=eng, marker_color=col,
+                                     hovertemplate=f"{eng}, %{{x}} rows: %{{y:,.0f}} rows/s"
+                                                   f"<extra></extra>"))
+            fig.update_layout(barmode="group", bargap=0.25, bargroupgap=0.08,
+                              xaxis_title="Rows", yaxis_title="Rows processed per second",
                               title="Throughput")
-            show(fig, 420)
+            show(fig, 400)
         piv = b.pivot(index="rows", columns="engine", values="median_s")
         piv.index = piv.index.map(lambda r: f"{r:,} rows")
         st.dataframe(piv.style.format("{:.2f} s"))
     else:
         st.info("benchmark_results.csv not found.")
 
-    st.success(
-        "**Key takeaways**\n"
+    section("Key takeaways")
+    st.markdown(
         "- **On one machine, Pandas is fastest up to 10M rows.** Hadoop pays about 4.5 s and "
         "Spark about 1 s of start-up per job, and on 2 cores neither catches up per row.\n"
         "- **At 100M rows (8 GB), plain Pandas ran out of memory**; Spark and Hadoop finished "
@@ -552,19 +754,26 @@ with tabs[5]:
         "revenue(s) = a·s / (1 + s/h), using non-linear least squares (scipy).\n"
         "4. **Optimise** the split with SLSQP: maximise total expected revenue subject to "
         "the budget and min/max share limits. With a fixed budget, max revenue = max profit.\n"
-        "5. **Validate** against the known true optimum at 10k / 100k / 1M rows, and "
-        "**bootstrap** for uncertainty.\n"
-        "6. **Benchmark** Pandas vs Hadoop MapReduce vs Spark from 10k to 100M rows.")
+        "5. **Validate** against the known true optimum at 10k, 100k and 1M rows, then repeat "
+        "in **hard mode** with data from two other curve shapes.\n"
+        f"6. **Bootstrap** ({N_BOOT} resamples) for uncertainty, and check on 30 fresh "
+        "datasets that the 90% ranges really contain the truth about 90% of the time.\n"
+        "7. **Benchmark** Pandas vs Hadoop MapReduce vs Spark from 10k to 100M rows.")
     section("Simulation assumptions (PKR)")
     a = pd.DataFrame(G.PLATFORMS).T.reset_index().rename(columns={"index": "platform"})
     a["row_share"] = G.PLATFORM_SHARE
     st.dataframe(a, hide_index=True)
-    st.caption("cpm = cost per 1,000 impressions · ctr/cvr = base click & conversion rates · "
-               "aov = average order value · half_sat = spend per slice where efficiency halves.")
+    st.caption("cpm is the cost per 1,000 impressions, ctr and cvr are the base click and "
+               "conversion rates, aov is the average order value, and half_sat is the spend per "
+               "slice where efficiency halves.")
     section("Limitations")
     st.markdown(
         "- **Simulated data:** results reflect the assumptions, not real Pakistani ad prices.\n"
-        "- **Best-case validation:** the fitted curve shape matches the generator's.\n"
+        "- **Curve shape:** the main validation uses the same curve shape as the generator. In "
+        "hard mode the optimizer still gets 96%+ of the best revenue, but its error stops "
+        "shrinking with more data, so a wrong shape has a cost that more rows can't remove.\n"
+        "- **Uncertainty ranges** only cover noise from limited data, not a wrong curve shape "
+        "or wrong assumptions.\n"
         "- **No confounding:** simulated spend is random; real brands spend more when demand "
         "is already high, which makes ads look more effective.\n"
         "- **Revenue only:** brand awareness (YouTube's main job) isn't measured, so YouTube "
@@ -573,5 +782,5 @@ with tabs[5]:
         "- **Pooled curves:** one curve per platform; segments (age, city…) aren't optimised separately.\n"
         "- **Scale assumption:** absolute revenue depends on the slices setting; comparisons "
         "between strategies are more reliable than the absolute numbers.")
-    st.markdown("**Links:** [GitHub repo](https://github.com/usamahanif349/pk-footwear-budget-optimizer) · "
+    st.markdown("**Links:** [GitHub repo](https://github.com/usamahanif349/pk-footwear-budget-optimizer), "
                 "[Project 1: sentiment analysis](https://github.com/usamahanif349/pk-footwear-sentiment-analysis)")
