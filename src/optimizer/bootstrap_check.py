@@ -12,7 +12,7 @@ Two ways to build the range from the same bootstrap results:
                (corrects for a fit that is pushed one way)
 
 Usage (Command Prompt):  python src\\optimizer\\bootstrap_check.py
-(takes a few minutes)
+(takes about 4 minutes: 3 brands x 30 datasets x 200 resamples)
 """
 import sys
 from pathlib import Path
@@ -39,14 +39,20 @@ def shares(params):
 
 
 def main():
-    truth = true_params()
+    rows = []
+    for brand in G.BRANDS:
+        check_brand(brand, rows)
+    finish(rows)
+
+
+def check_brand(brand, rows):
+    truth = true_params(brand)
     plats = list(truth)
     true_share = shares(truth)
-    print("True best shares: " + ", ".join(f"{p} {true_share[p]:.1f}%" for p in plats))
-
-    rows = []
+    print(f"\n{brand} true best shares: "
+          + ", ".join(f"{p} {true_share[p]:.1f}%" for p in plats))
     for seed in range(1, DATASETS + 1):
-        df = G.generate(ROWS, 1000 + seed)
+        df = G.generate(ROWS, 1000 + seed, brands=[brand])
         est = shares(fit_curves(df))
         rng = np.random.default_rng(seed)
         boot = []
@@ -65,18 +71,20 @@ def main():
                 basic_lo = max(0.0, 2 * est[p] - hi[p])
                 basic_hi = min(100.0, 2 * est[p] - lo[p])
                 rows.append(dict(
-                    seed=seed, n_boot=n_boot, platform=p, true=t, estimate=est[p],
+                    brand=brand, seed=seed, n_boot=n_boot, platform=p, true=t, estimate=est[p],
                     pct_lo=lo[p], pct_hi=hi[p], basic_lo=basic_lo, basic_hi=basic_hi,
                     pct_covered=lo[p] - 1e-6 <= t <= hi[p] + 1e-6,
                     basic_covered=basic_lo - 1e-6 <= t <= basic_hi + 1e-6,
                     pct_width=hi[p] - lo[p], basic_width=basic_hi - basic_lo,
                 ))
-        print(f"  dataset {seed:2d}/{DATASETS} done")
+        print(f"  {brand}: dataset {seed:2d}/{DATASETS} done")
 
+
+def finish(rows):
     res = pd.DataFrame(rows)
     res.to_csv(OUT / "bootstrap_coverage_runs.csv", index=False)
 
-    summary = res.groupby(["n_boot", "platform"]).agg(
+    summary = res.groupby(["brand", "n_boot", "platform"], sort=False).agg(
         true_share=("true", "first"),
         mean_estimate=("estimate", "mean"),
         percentile_coverage=("pct_covered", "mean"),
@@ -84,7 +92,7 @@ def main():
         percentile_width=("pct_width", "mean"),
         basic_width=("basic_width", "mean"),
     )
-    overall = res.groupby("n_boot").agg(
+    overall = res.groupby(["brand", "n_boot"], sort=False).agg(
         percentile_coverage=("pct_covered", "mean"),
         basic_coverage=("basic_covered", "mean"),
         percentile_width=("pct_width", "mean"),
@@ -97,6 +105,7 @@ def main():
     print("\nOVERALL (target: 90%):")
     print(overall.round(1).to_string())
     summary.round(3).to_csv(OUT / "bootstrap_coverage_summary.csv")
+    overall.round(3).to_csv(OUT / "bootstrap_coverage_overall.csv")
     print(f"\nSaved -> {OUT}")
 
 

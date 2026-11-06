@@ -1,8 +1,14 @@
 """
-Simulate digital ad campaign data for a FICTIONAL Pakistani footwear brand.
-ALL NUMBERS BELOW ARE ASSUMPTIONS (simulated data), not real company data.
+Simulate digital ad campaign data for three Pakistani footwear brands:
+Borjan, Servis and Ndure (the brands from Project 1).
 
-Usage (Command Prompt):  python src\\simulation\\generate_data.py --rows 10000
+The ADS DATA IS SIMULATED: we have no access to these brands' real ad accounts.
+What is real: each brand's customer sentiment from Project 1 (XLM-R predictions
+on 881 YouTube comments and Google Maps reviews), which nudges how well that
+brand's ads convert. Everything else below is an ASSUMPTION.
+
+Usage (Command Prompt):  python src\\simulation\\generate_data.py --rows 30000
+(rows = total rows, split equally across the three brands)
 """
 import argparse
 from pathlib import Path
@@ -59,6 +65,41 @@ CITIES = ["Karachi", "Lahore", "Islamabad", "Rawalpindi",
 CITY_SHARE = [0.24, 0.22, 0.10, 0.08, 0.10, 0.08, 0.08, 0.10]
 CITY_AOV_MULT = [1.05, 1.05, 1.15, 1.00, 0.90, 0.90, 0.90, 0.85]
 
+# ---------------- BRANDS (from Project 1) ----------------
+# Share of each brand's reviews that the XLM-R model labelled positive / negative
+# in Project 1 (pk-footwear-sentiment-analysis, results_bert.csv). REAL numbers,
+# from a weak model (accuracy 0.55); Servis comes from YouTube comments only.
+SENTIMENT = {
+    "Borjan": dict(positive=0.490, negative=0.306, reviews=147),
+    "Servis": dict(positive=0.314, negative=0.165, reviews=576),
+    "Ndure":  dict(positive=0.329, negative=0.380, reviews=158),
+}
+SENTIMENT_EFFECT = 0.5  # ASSUMPTION: +10 points net sentiment -> +5% conversion rate
+
+# ASSUMPTIONS about each brand's positioning (not sourced from the companies):
+# aov = order value multiplier vs the platform average, aff = how well the
+# brand's audience responds on each platform (multiplies click-through rate).
+BRAND_PROFILE = {
+    "Borjan": dict(aov=1.10, aff=dict(Facebook=1.00, Instagram=1.15, Google=1.00,
+                                      TikTok=0.85, YouTube=0.90)),
+    "Servis": dict(aov=0.85, aff=dict(Facebook=1.15, Instagram=0.90, Google=1.05,
+                                      TikTok=0.90, YouTube=1.10)),
+    "Ndure":  dict(aov=1.00, aff=dict(Facebook=0.85, Instagram=1.10, Google=0.95,
+                                      TikTok=1.30, YouTube=1.00)),
+}
+BRANDS = list(BRAND_PROFILE)
+
+
+def net_sentiment(brand):
+    s = SENTIMENT[brand]
+    return s["positive"] - s["negative"]
+
+
+def sentiment_mult(brand):
+    """Conversion-rate multiplier from the brand's Project 1 sentiment."""
+    return 1.0 + SENTIMENT_EFFECT * net_sentiment(brand)
+
+
 DEVICES = ["Mobile", "Desktop", "Tablet"]
 DEVICE_SHARE = [0.80, 0.15, 0.05]
 DEVICE_CVR_MULT = [1.00, 1.25, 1.05]
@@ -82,10 +123,13 @@ def efficiency(spend, half_sat, shape="hyperbolic"):
     raise ValueError(f"unknown shape: {shape}")
 
 
-def generate(n, seed=42, shape="hyperbolic"):
+def generate(n, seed=42, shape="hyperbolic", brands=None):
+    """n rows in total, split equally across `brands` (default: all three)."""
     rng = np.random.default_rng(seed)
     plats = list(PLATFORMS)
     camps = list(CAMPAIGNS)
+    brands = list(brands) if brands else BRANDS
+    b = rng.choice(len(brands), size=n)
 
     p = rng.choice(len(plats), size=n, p=PLATFORM_SHARE)
     c = rng.choice(len(camps), size=n, p=CAMPAIGN_SHARE)
@@ -113,8 +157,12 @@ def generate(n, seed=42, shape="hyperbolic"):
     # diminishing returns: efficiency falls as spend in a slice grows
     sat = efficiency(spend, parr("half_sat"), shape)
 
+    brand_aff = np.array([[BRAND_PROFILE[br]["aff"][pl] for pl in plats] for br in brands])[b, p]
+    brand_cvr = np.array([sentiment_mult(br) for br in brands])[b]
+    brand_aov = np.array([BRAND_PROFILE[br]["aov"] for br in brands])[b]
+
     impressions = rng.poisson(spend / parr("cpm") * 1000 * rng.lognormal(0, 0.15, n))
-    ctr = np.clip(parr("ctr") * carr("ctr").astype(float)[c] * sat
+    ctr = np.clip(parr("ctr") * carr("ctr").astype(float)[c] * sat * brand_aff
                   * rng.lognormal(0, 0.20, n), 0, 1)
     clicks = rng.binomial(impressions, ctr)
 
@@ -122,10 +170,10 @@ def generate(n, seed=42, shape="hyperbolic"):
     gen_mult = np.array([GENDER_MULT[x] for x in plats])[p, g]
     dev_mult = np.array(DEVICE_CVR_MULT)[d]
     cvr = np.clip(parr("cvr") * carr("cvr").astype(float)[c] * age_mult
-                  * gen_mult * dev_mult * rng.lognormal(0, 0.25, n), 0, 1)
+                  * gen_mult * dev_mult * brand_cvr * rng.lognormal(0, 0.25, n), 0, 1)
     conversions = rng.binomial(clicks, cvr)
 
-    revenue = np.round(conversions * parr("aov") * np.array(CITY_AOV_MULT)[ci]
+    revenue = np.round(conversions * parr("aov") * brand_aov * np.array(CITY_AOV_MULT)[ci]
                        * rng.lognormal(0, 0.10, n))
 
     df = pd.DataFrame({
@@ -141,13 +189,15 @@ def generate(n, seed=42, shape="hyperbolic"):
         "gender": pd.Categorical.from_codes(g, GENDERS),
         "city": pd.Categorical.from_codes(ci, CITIES),
         "device": pd.Categorical.from_codes(d, DEVICES),
+        # brand goes LAST so the MapReduce/Spark column positions stay the same
+        "brand": pd.Categorical.from_codes(b, brands),
     })
     return df.sort_values("date").reset_index(drop=True)
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--rows", type=int, default=10000)
+    ap.add_argument("--rows", type=int, default=30000)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--shape", default="hyperbolic", choices=SHAPES)
     args = ap.parse_args()
@@ -160,7 +210,7 @@ def main():
     df.to_csv(out, index=False, date_format="%Y-%m-%d")
 
     print(f"Saved {len(df):,} rows -> {out}")
-    s = df.groupby("platform", observed=True)[["spend", "revenue"]].sum()
+    s = df.groupby(["brand", "platform"], observed=True)[["spend", "revenue"]].sum()
     s["ROAS"] = (s["revenue"] / s["spend"]).round(2)
     print(s)
 

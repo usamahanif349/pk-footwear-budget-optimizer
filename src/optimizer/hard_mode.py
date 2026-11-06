@@ -11,6 +11,8 @@ so it is a best case. Here the data comes from two other shapes:
 with x = spend / h. The optimizer still fits its usual curve, and we score
 its split against the TRUE best split of the TRUE curve.
 
+Each brand is tested separately (sizes are rows per brand).
+
 Usage (Command Prompt):  python src\\optimizer\\hard_mode.py
 """
 import sys
@@ -68,10 +70,16 @@ def true_best(truth, shape):
 
 
 def main():
-    truth = true_params()
-    plats = list(truth)
     runs, optima = [], []
+    for brand in G.BRANDS:
+        run_brand(brand, runs, optima)
+    finish(runs, optima)
 
+
+def run_brand(brand, runs, optima):
+    truth = true_params(brand)
+    plats = list(truth)
+    print(f"\n################ {brand} ################")
     for shape in G.SHAPES:
         best = true_best(truth, shape)
         best_rev = true_revenue(best, truth, shape)
@@ -81,17 +89,17 @@ def main():
             f"{pl} {best[pl] / BUDGET * 100:.1f}%" for pl in plats))
         print(f"  Equal split gets {equal_rev / best_rev * 100:.1f}% of the true best")
         for pl in plats:
-            optima.append(dict(shape=shape, platform=pl,
+            optima.append(dict(brand=brand, shape=shape, platform=pl,
                                true_best_share_pct=best[pl] / BUDGET * 100))
 
         for n in SIZES:
             for seed in SEEDS:
-                df = G.generate(n, seed, shape)
+                df = G.generate(n, seed, shape, brands=[brand])
                 alloc = optimize(fit_curves(df), BUDGET, SLICES)
                 hist = df.groupby("platform", observed=True)["spend"].sum()
                 hist_alloc = {str(pl): BUDGET * v / hist.sum() for pl, v in hist.items()}
                 runs.append(dict(
-                    shape=shape, rows=n, seed=seed,
+                    brand=brand, shape=shape, rows=n, seed=seed,
                     optimizer_pct_of_best=true_revenue(alloc, truth, shape) / best_rev * 100,
                     lastyear_pct_of_best=true_revenue(hist_alloc, truth, shape) / best_rev * 100,
                     equal_pct_of_best=equal_rev / best_rev * 100,
@@ -103,8 +111,11 @@ def main():
                 print(f"  rows={n:>9,} seed={seed}  optimizer {r['optimizer_pct_of_best']:6.2f}% "
                       f"of best   share error {r['avg_share_error_pp']:5.2f} pp")
 
+
+
+def finish(runs, optima):
     runs = pd.DataFrame(runs)
-    summary = runs.groupby(["shape", "rows"]).agg(
+    summary = runs.groupby(["brand", "shape", "rows"], sort=False).agg(
         optimizer_pct_mean=("optimizer_pct_of_best", "mean"),
         optimizer_pct_min=("optimizer_pct_of_best", "min"),
         lastyear_pct=("lastyear_pct_of_best", "mean"),
@@ -112,7 +123,6 @@ def main():
         share_error_pp_mean=("avg_share_error_pp", "mean"),
         share_error_pp_std=("avg_share_error_pp", "std"),
     ).round(3)
-    summary = summary.reindex(G.SHAPES, level="shape")
     print("\nHARD MODE SUMMARY (% of the TRUE best revenue; lower error = better):")
     print(summary.to_string())
 
