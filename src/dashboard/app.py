@@ -46,11 +46,6 @@ st.set_page_config(page_title="StepUp ad budget optimizer", page_icon="📊", la
 # ---------------- STYLE ----------------
 CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
-html, body, .stApp, .stApp p, .stApp li, .stApp label, .stApp h1, .stApp h2, .stApp h3,
-.stApp h4, .stApp td, .stApp th, .stApp input, .stApp [data-baseweb="tab"] {
-  font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif !important;
-}
 .block-container {padding-top: 4.5rem; max-width: 1240px;}
 h1, h2, h3 {letter-spacing: -0.01em;}
 
@@ -116,18 +111,27 @@ table.alloc tr.off td {color: #8A909B;}
 .side-brand {font-size: 1.25rem; font-weight: 700; color: #15181D; line-height: 1.2;}
 .side-brand span {display: block; font-size: .9rem; font-weight: 400; color: #5B6270;}
 
-/* tabs */
-.stTabs [data-baseweb="tab-list"] {gap: 22px; border-bottom: 1px solid #E3E6EB;}
-.stTabs [data-baseweb="tab"] {padding: 10px 2px; height: auto; background: transparent;}
-.stTabs [data-baseweb="tab"] p {font-size: .98rem; color: #5B6270;}
-.stTabs [aria-selected="true"] p {color: #15181D; font-weight: 600;}
+/* tabs: a segmented control so the sections stand out */
+.stTabs {margin-top: 1.6rem;}
+.stTabs [data-baseweb="tab-list"] {gap: 4px; background: #EEF1F5; padding: 5px;
+  border-radius: 10px; border: 1px solid #E3E6EB; width: fit-content; max-width: 100%;
+  flex-wrap: wrap;}
+.stTabs [data-baseweb="tab"] {padding: 9px 18px; height: auto; border-radius: 7px;
+  background: transparent;}
+.stTabs [data-baseweb="tab"] p {font-size: .98rem; color: #3B414B; font-weight: 500;}
+.stTabs [data-baseweb="tab"]:hover {background: #E3E7ED;}
+.stTabs [aria-selected="true"], .stTabs [aria-selected="true"]:hover {background: #1E3A5F !important;
+  box-shadow: 0 1px 2px rgba(21, 24, 29, .18);}
+.stTabs [aria-selected="true"] p {color: #FFFFFF !important; font-weight: 600;}
+.stTabs [data-baseweb="tab"]:focus-visible {outline: 2px solid #1E3A5F; outline-offset: 2px;}
+.stTabs [data-baseweb="tab-highlight"], .stTabs [data-baseweb="tab-border"] {display: none;}
 </style>
 """
 st.markdown(CSS, unsafe_allow_html=True)
 
 pio.templates["stepup"] = go.layout.Template(layout=go.Layout(
     paper_bgcolor="#FFFFFF", plot_bgcolor="#FFFFFF",
-    font=dict(color="#3B414B", family="IBM Plex Sans, Segoe UI, sans-serif", size=13),
+    font=dict(color="#3B414B", family="Source Sans 3, Source Sans Pro, Segoe UI, sans-serif", size=13),
     colorway=list(COLORS.values()),
     xaxis=dict(gridcolor="#EEF0F3", zerolinecolor="#C9CED6", linecolor="#C9CED6",
                ticks="", showline=True),
@@ -138,7 +142,7 @@ pio.templates["stepup"] = go.layout.Template(layout=go.Layout(
                 xanchor="left", x=0, title_text=""),
     title=dict(font=dict(size=15, color=INK), x=0, xanchor="left", y=0.98),
     hoverlabel=dict(bgcolor="#FFFFFF", bordercolor="#D5D9E0",
-                    font=dict(color=INK, family="IBM Plex Sans, sans-serif"))))
+                    font=dict(color=INK, family="Source Sans 3, Source Sans Pro, sans-serif"))))
 pio.templates.default = "plotly_white+stepup"
 
 
