@@ -512,6 +512,19 @@ def segment_view(d, dim):
     return out
 
 
+def say_card(praise, fixes):
+    """Headline for the 'What to say' card: the top praise, else the top complaint to fix."""
+    if len(praise):
+        r = praise.iloc[0]
+        return ("What to say", r.aspect.capitalize(), f"{r.positive:.0%} positive", "good",
+                "what customers praise most (Project 1)")
+    if len(fixes):
+        r = fixes.iloc[0]
+        return ("What to say", f"Fix {r.aspect}", f"{r.negative:.0%} negative", "bad",
+                "the top complaint in Project 1 reviews")
+    return ("What to say", "Test creatives", "", "", "no clear strength or complaint yet")
+
+
 def page_marketing():
     need_settings()
     page_head("Dashboard / Marketing plan", f"{brand} marketing plan",
@@ -534,9 +547,7 @@ def page_marketing():
          f"{order.iloc[2].platform} {order.iloc[2]['share_%']:.0f}%"),
         ("Who to target", f"{ages[lead.platform][0]}", "", "",
          f"core age group on {lead.platform}, mostly {cities[lead.platform][0]}"),
-        ("What to say", praise.aspect.iloc[0].capitalize() if len(praise) else "Test",
-         "", "", "what customers praise most (Project 1)" if len(praise)
-         else "no clear strength yet: test creatives"),
+        say_card(praise, fixes),
         ("When to push", camp.campaign.iloc[0],
          f"ROAS {camp.ROAS.iloc[0]:.2f}", "good", "the campaign that earns the most per rupee"),
     ])
