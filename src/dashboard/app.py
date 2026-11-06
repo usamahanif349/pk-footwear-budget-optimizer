@@ -49,9 +49,9 @@ CSS = """
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
 html, body, .stApp, .stApp p, .stApp li, .stApp label, .stApp h1, .stApp h2, .stApp h3,
 .stApp h4, .stApp td, .stApp th, .stApp input, .stApp [data-baseweb="tab"] {
-  font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
+  font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif !important;
 }
-.block-container {padding-top: 2.2rem; max-width: 1240px;}
+.block-container {padding-top: 4.5rem; max-width: 1240px;}
 h1, h2, h3 {letter-spacing: -0.01em;}
 
 /* page head */
@@ -68,12 +68,13 @@ h1, h2, h3 {letter-spacing: -0.01em;}
   font-weight: 600; font-size: .92rem; white-space: nowrap; overflow: hidden;}
 .seg span.pct {font-weight: 500; opacity: .9; margin-left: 6px;}
 .alloc-wrap {overflow-x: auto;}
-table.alloc {width: 100%; border-collapse: collapse; font-size: .93rem;
-  font-variant-numeric: tabular-nums;}
+table.alloc {width: 100%; border-collapse: collapse; font-size: .93rem; border: 0;
+  font-variant-numeric: tabular-nums; margin: 0;}
+table.alloc tr, table.alloc th, table.alloc td {border: 0; background: transparent;}
 table.alloc th {text-align: right; color: #5B6270; font-weight: 500; padding: 6px 10px;
-  border-bottom: 1px solid #E3E6EB; white-space: nowrap;}
+  border-bottom: 1px solid #E3E6EB !important; white-space: nowrap;}
 table.alloc th:first-child, table.alloc td:first-child {text-align: left;}
-table.alloc td {text-align: right; padding: 9px 10px; border-bottom: 1px solid #F0F2F5;
+table.alloc td {text-align: right; padding: 9px 10px; border-bottom: 1px solid #F0F2F5 !important;
   color: #15181D; white-space: nowrap;}
 table.alloc tr.off td {color: #8A909B;}
 .sw {display: inline-block; width: 10px; height: 10px; border-radius: 2px;
