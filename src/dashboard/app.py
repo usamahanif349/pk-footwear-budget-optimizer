@@ -111,20 +111,28 @@ table.alloc tr.off td {color: #8A909B;}
 .side-brand {font-size: 1.25rem; font-weight: 700; color: #15181D; line-height: 1.2;}
 .side-brand span {display: block; font-size: .9rem; font-weight: 400; color: #5B6270;}
 
-/* tabs: a segmented control so the sections stand out */
-.stTabs {margin-top: 1.6rem;}
-.stTabs [data-baseweb="tab-list"] {gap: 4px; background: #EEF1F5; padding: 5px;
-  border-radius: 10px; border: 1px solid #E3E6EB; width: fit-content; max-width: 100%;
-  flex-wrap: wrap;}
-.stTabs [data-baseweb="tab"] {padding: 9px 18px; height: auto; border-radius: 7px;
-  background: transparent;}
-.stTabs [data-baseweb="tab"] p {font-size: .98rem; color: #3B414B; font-weight: 500;}
-.stTabs [data-baseweb="tab"]:hover {background: #E3E7ED;}
-.stTabs [aria-selected="true"], .stTabs [aria-selected="true"]:hover {background: #1E3A5F !important;
-  box-shadow: 0 1px 2px rgba(21, 24, 29, .18);}
-.stTabs [aria-selected="true"] p {color: #FFFFFF !important; font-weight: 600;}
-.stTabs [data-baseweb="tab"]:focus-visible {outline: 2px solid #1E3A5F; outline-offset: 2px;}
-.stTabs [data-baseweb="tab-highlight"], .stTabs [data-baseweb="tab-border"] {display: none;}
+/* tabs: a full-width tab bar so the sections stand out */
+.stTabs {margin-top: 1.8rem;}
+.stTabs [role="tablist"] {display: flex !important; gap: 6px !important;
+  background: #EEF1F5 !important; padding: 6px !important; border-radius: 12px !important;
+  border: 1px solid #DDE2E9 !important; width: 100% !important; flex-wrap: wrap !important;
+  overflow: visible !important;}
+.stTabs button[role="tab"] {flex: 1 1 0 !important; justify-content: center !important;
+  min-width: 140px; padding: 12px 18px !important; height: auto !important;
+  border-radius: 8px !important; background: #FFFFFF !important;
+  border: 1px solid #DDE2E9 !important; margin: 0 !important;}
+.stTabs button[role="tab"] p {font-size: 1rem !important; font-weight: 600 !important;
+  color: #3B414B !important; white-space: nowrap;}
+.stTabs button[role="tab"]:hover {background: #F7F9FB !important; border-color: #B9C1CC !important;}
+.stTabs button[role="tab"][aria-selected="true"] {background: #1E3A5F !important;
+  border-color: #1E3A5F !important; box-shadow: 0 2px 6px rgba(30, 58, 95, .25) !important;}
+.stTabs button[role="tab"][aria-selected="true"] p {color: #FFFFFF !important;}
+.stTabs button[role="tab"]:focus-visible {outline: 2px solid #1E3A5F !important;
+  outline-offset: 2px;}
+.stTabs [data-baseweb="tab-highlight"], .stTabs [data-baseweb="tab-border"] {display: none !important;}
+@media (max-width: 800px) {
+  .stTabs button[role="tab"] {min-width: 45%; padding: 10px 8px !important;}
+}
 </style>
 """
 st.markdown(CSS, unsafe_allow_html=True)
