@@ -27,6 +27,19 @@ Each brand also has an assumed **positioning**: order value (Borjan higher, Serv
 
 ## Key results
 
+### 0. The marketing plan (dashboard page)
+
+For each brand the dashboard turns the analysis into a one-page plan a marketing manager can use, and download:
+
+| | Borjan | Servis | Ndure |
+|---|---|---|---|
+| **Where to spend** | Facebook 31%, Instagram 29%, TikTok 24% | Facebook 36%, TikTok 25%, Instagram 20% | TikTok 40%, Instagram 23%, Facebook 22% |
+| **Who to target** (core age on the lead platform) | 25–34 on Facebook | 25–34 on Facebook | 18–24 on TikTok |
+| **What to say** (Project 1 reviews) | Lead with comfort (73% positive) and design (72%); answer price and quality doubts | Lead with design (74% positive) | Fix sizing (77% negative) and in-store service (71% negative) first |
+| **When to push** | 11.11 and both Eids; cut always-on spend | same pattern | same pattern |
+
+"What to say" comes from real customer reviews in Project 1; aspects with fewer than 10 mentions are left out (for example Servis price complaints, only 8 mentions). "Who" and "when" come from the simulated ad data, so they reflect its assumptions.
+
 ### 1. Recommended split of Rs. 1,000,000 per brand (one month)
 
 | Platform | Borjan | Servis | Ndure |
@@ -181,6 +194,7 @@ data/processed/                     KPI tables, recommendations, validation and 
 notebooks/benchmark_pandas_mapreduce_spark.ipynb   Colab: Hadoop + Spark benchmark
 src/simulation/generate_data.py     simulated ad data generator (brands, sentiment, assumptions)
 src/analysis/kpis.py                CTR, CPC, CVR, CPA, ROAS tables
+src/analysis/project1_aspects.py    what customers praise / complain about, per brand (from Project 1)
 src/optimizer/optimize.py           response curves + budget optimiser, per brand
 src/optimizer/validate.py           self-check against the true optimum
 src/optimizer/hard_mode.py          self-check when the true curve has a different shape
@@ -197,6 +211,7 @@ venv\Scripts\activate
 pip install -r requirements.txt
 python src\simulation\generate_data.py --rows 30000
 python src\analysis\kpis.py --file ads_30000.csv
+python src\analysis\project1_aspects.py
 python src\optimizer\optimize.py --file ads_30000.csv
 python src\optimizer\validate.py
 python src\optimizer\hard_mode.py

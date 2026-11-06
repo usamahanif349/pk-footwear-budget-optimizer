@@ -473,8 +473,166 @@ def page_overview():
                            f"{brand.lower()}_budget_plan.csv", "text/csv")
 
 
+
 # =====================================================================
-# PAGE 2: PLAN & SCENARIOS
+# PAGE 2: MARKETING PLAN (where to spend, who to target, what to say, when)
+# =====================================================================
+PRAISE_ANGLE = {
+    "comfort": "Lead with all-day comfort: walking shots, 'comfortable from day one' claims.",
+    "design": "Lead with the look: new-collection visuals, styling reels, colour variety.",
+    "staff": "Show the in-store experience: helpful staff, 'visit your nearest outlet'.",
+    "quality": "Lead with durability: materials, stitching close-ups, 'built to last'.",
+    "price": "Lead with value: price points on the creative, bundles, 'worth every rupee'.",
+    "size": "Lead with fit: true-to-size claims and the full size range.",
+    "delivery": "Lead with convenience: fast delivery and easy online ordering.",
+}
+FIX_ANGLE = {
+    "price": "Price is a pain point: show offers, bundles and sale prices clearly in the ad.",
+    "size": "Sizing is a pain point: add a size guide and 'easy exchange' to the ad and landing page.",
+    "staff": "In-store service gets complaints: push online ordering and fix service before driving footfall.",
+    "quality": "Quality is doubted: use proof (warranty, materials, reviews) rather than claims.",
+    "design": "Designs split opinion: test several creatives and keep the winners.",
+    "comfort": "Comfort gets complaints: avoid comfort claims until the product answers them.",
+    "delivery": "Delivery gets complaints: promise only delivery times you can keep.",
+}
+MIN_MENTIONS = 10  # below this an aspect is shown as a weak signal only
+
+
+def segment_view(d, dim):
+    """Per platform: the segment that brings most revenue (reach) and the one with the
+    best ROAS, flagged only when it beats the platform average by 10% or more."""
+    t = kpi_table(d, ["platform", dim])
+    out = {}
+    for p, g in t.groupby("platform"):
+        core = g.loc[g.revenue.idxmax(), dim]
+        avg = g.revenue.sum() / g.spend.sum()
+        top = g.loc[g.ROAS.idxmax()]
+        out[p] = (str(core), str(top[dim]) if top.ROAS >= 1.1 * avg else "no clear winner",
+                  top.ROAS / avg - 1)
+    return out
+
+
+def page_marketing():
+    need_settings()
+    page_head("Dashboard / Marketing plan", f"{brand} marketing plan",
+              "Where to spend, who to target, what to say and when to push, in one page.",
+              [(brand, ""), SIM_TAG])
+    asp = read_csv("brand_aspects.csv")
+    a = asp[asp.brand == brand] if asp is not None else pd.DataFrame()
+    solid = a[a.mentions >= MIN_MENTIONS]
+    praise = solid[solid.positive >= 0.5].sort_values("positive", ascending=False)
+    fixes = solid[solid.negative >= 0.35].sort_values("negative", ascending=False)
+    camp = kpi_table(df, ["campaign"]).sort_values("ROAS", ascending=False)
+    avg_roas = df.revenue.sum() / df.spend.sum()
+    ages, cities = segment_view(df, "age"), segment_view(df, "city")
+    devices, genders = segment_view(df, "device"), segment_view(df, "gender")
+    lead = order.iloc[0]
+
+    kpi_cards([
+        ("Where to spend", f"{lead.platform} {lead['share_%']:.0f}%", "", "",
+         f"then {order.iloc[1].platform} {order.iloc[1]['share_%']:.0f}% and "
+         f"{order.iloc[2].platform} {order.iloc[2]['share_%']:.0f}%"),
+        ("Who to target", f"{ages[lead.platform][0]}", "", "",
+         f"core age group on {lead.platform}, mostly {cities[lead.platform][0]}"),
+        ("What to say", praise.aspect.iloc[0].capitalize() if len(praise) else "Test",
+         "", "", "what customers praise most (Project 1)" if len(praise)
+         else "no clear strength yet: test creatives"),
+        ("When to push", camp.campaign.iloc[0],
+         f"ROAS {camp.ROAS.iloc[0]:.2f}", "good", "the campaign that earns the most per rupee"),
+    ])
+
+    with card("mk_where"):
+        card_head("1. Where to spend and who to target",
+                  "Core audience = the segment that brings the most revenue. Best return = the "
+                  "segment with the highest ROAS, shown only if it beats the platform average by "
+                  "10% or more.")
+        rows = []
+        for _, r in order.iterrows():
+            p = r["platform"]
+            if r["spend"] <= 1:
+                continue
+            br = [f"{v[1]} ({v[2]:+.0%})" if v[1] != "no clear winner" else "–"
+                  for v in (ages[p], cities[p], devices[p])]
+            rows.append({"Platform": p, "Share": f"{r['share_%']:.1f}%", "Monthly spend": rs(r["spend"]),
+                         "Core age": ages[p][0], "Core city": cities[p][0],
+                         "Core device": devices[p][0], "Best-return age": br[0],
+                         "Best-return city": br[1], "Best-return device": br[2]})
+        st.dataframe(pd.DataFrame(rows), hide_index=True)
+        st.caption("Segment results come from the simulated ad data, so they reflect the "
+                   "assumptions (for example younger audiences on TikTok and Instagram). Gender "
+                   "differences were too small to act on.")
+
+    c1, c2 = st.columns(2, gap="medium")
+    with c1:
+        with card("mk_say"):
+            card_head("2. What to say in the ads",
+                      f"From Project 1: what {brand} customers praise and complain about")
+            if a.empty:
+                st.info("Run src/analysis/project1_aspects.py to create brand_aspects.csv.")
+            else:
+                html('<p class="why"><b>Lead with</b></p>')
+                if len(praise):
+                    for _, r in praise.head(2).iterrows():
+                        html(f'<div class="fact"><span>{PRAISE_ANGLE[r.aspect]}</span>'
+                             f'<b>{r.positive:.0%} positive</b></div>')
+                else:
+                    html('<div class="fact"><span>No aspect is clearly praised yet: test several '
+                         'creative angles and keep the winners.</span><b>–</b></div>')
+                html('<p class="why" style="margin-top:12px"><b>Fix or answer</b></p>')
+                if len(fixes):
+                    for _, r in fixes.head(2).iterrows():
+                        html(f'<div class="fact"><span>{FIX_ANGLE[r.aspect]}</span>'
+                             f'<b>{r.negative:.0%} negative</b></div>')
+                else:
+                    html('<div class="fact"><span>No strong complaint found.</span><b>–</b></div>')
+                with st.expander("All aspects (mentions, positive, negative)"):
+                    st.dataframe(a.drop(columns="brand").style.format(
+                        {"positive": "{:.0%}", "negative": "{:.0%}", "net": "{:+.0%}"}),
+                        hide_index=True)
+                st.caption(f"Based on real reviews and comments from Project 1, labelled by a "
+                           f"moderately accurate model (accuracy 0.55). Aspects with fewer than "
+                           f"{MIN_MENTIONS} mentions are left out of the advice.")
+    with c2:
+        with card("mk_when"):
+            card_head("3. When to push", "Campaign return per rupee, compared with this brand's "
+                      "average")
+            cm = camp[["campaign", "ROAS", "spend", "revenue"]].copy()
+            cm["Advice"] = np.where(cm.ROAS >= 1.2 * avg_roas, "Boost",
+                                    np.where(cm.ROAS <= 0.8 * avg_roas, "Reduce", "Keep"))
+            st.dataframe(cm.rename(columns={"campaign": "Campaign", "spend": "Spend",
+                                            "revenue": "Revenue"}).style.format(
+                {"ROAS": "{:.2f}", "Spend": "Rs. {:,.0f}", "Revenue": "Rs. {:,.0f}"}),
+                hide_index=True)
+            boost = cm[cm.Advice == "Boost"].campaign.tolist()
+            reduce_ = cm[cm.Advice == "Reduce"].campaign.tolist()
+            msg = ""
+            if boost:
+                msg += f"Move budget into **{', '.join(boost)}**"
+            if reduce_:
+                msg += f"{' and away from' if boost else 'Cut'} **{', '.join(reduce_)}**"
+            if msg:
+                st.markdown(msg + ".")
+            st.caption("Campaign windows use 2025 dates in the simulation; Eid dates move each year.")
+
+    # one-page plan to download
+    lines = [f"{brand.upper()} MARKETING PLAN (budget {rs(budget)} per month)",
+             "Ad data is simulated; customer sentiment is from Project 1.", "",
+             "1. WHERE TO SPEND AND WHO TO TARGET"]
+    for _, r in order.iterrows():
+        if r["spend"] > 1:
+            p = r["platform"]
+            lines.append(f"- {p}: {r['share_%']:.1f}% ({rs(r['spend'])}). Core audience: "
+                         f"{ages[p][0]}, {cities[p][0]}, {devices[p][0]}.")
+    lines += ["", "2. WHAT TO SAY"]
+    lines += [f"- {PRAISE_ANGLE[x]}" for x in praise.aspect.head(2)] or ["- Test several creative angles."]
+    lines += [f"- {FIX_ANGLE[x]}" for x in fixes.aspect.head(2)]
+    lines += ["", "3. WHEN TO PUSH"]
+    lines += [f"- {r.campaign}: ROAS {r.ROAS:.2f} -> {r.Advice}" for r in cm.itertuples()]
+    st.download_button("Download this marketing plan (TXT)", "\n".join(lines),
+                       f"{brand.lower()}_marketing_plan.txt", "text/plain", type="primary")
+
+# =====================================================================
+# PAGE 3: PLAN & SCENARIOS
 # =====================================================================
 def page_plan():
     need_settings()
@@ -918,6 +1076,8 @@ def page_about():
 pages = [
     st.Page(page_overview, title="Overview", icon=":material/space_dashboard:",
             url_path="overview", default=True),
+    st.Page(page_marketing, title="Marketing plan", icon=":material/campaign:",
+            url_path="marketing-plan"),
     st.Page(page_plan, title="Plan & scenarios", icon=":material/tune:", url_path="plan"),
     st.Page(page_performance, title="Performance", icon=":material/insights:",
             url_path="performance"),
