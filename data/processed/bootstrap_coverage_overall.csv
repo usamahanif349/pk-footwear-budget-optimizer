@@ -1,0 +1,7 @@
+brand,n_boot,percentile_coverage,basic_coverage,percentile_width,basic_width
+Borjan,50,84.667,86.667,4.152,3.925
+Borjan,200,90.0,88.667,4.261,4.048
+Servis,50,88.0,86.667,4.758,4.616
+Servis,200,94.0,88.667,4.993,4.837
+Ndure,50,92.667,92.667,4.986,4.72
+Ndure,200,94.0,94.0,5.168,4.885

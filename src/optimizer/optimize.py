@@ -6,7 +6,9 @@ Response curve per ad slice (one ad set for one day):
     revenue(s) = a * s / (1 + s / h)
     a = ROAS at very small spend,  h = spend where efficiency halves
 
-Usage (Command Prompt):  python src\\optimizer\\optimize.py --file ads_10000.csv
+Each brand (Borjan, Servis, Ndure) gets its own curves and its own budget split.
+
+Usage (Command Prompt):  python src\\optimizer\\optimize.py --file ads_30000.csv
 """
 import argparse
 import json
@@ -75,9 +77,35 @@ def optimize(params, budget, n_slices, min_share=0.0, max_share=1.0):
     return {pl: float(w[i] * budget) for i, pl in enumerate(plats)}
 
 
+def plan_for_brand(df, budget, n_slices, margin, min_share=0.0):
+    """Fit curves for one brand's data and compare the optimizer with simple splits."""
+    params = fit_curves(df)
+    plats = list(params)
+    hist = df.groupby("platform", observed=True)["spend"].sum()
+    hist = (hist / hist.sum()).to_dict()
+    best = max(params, key=lambda pl: df.loc[df.platform == pl, "revenue"].sum()
+               / df.loc[df.platform == pl, "spend"].sum())
+    strategies = {
+        "Optimizer": optimize(params, budget, n_slices, min_share),
+        "Last year's split": {pl: budget * hist[pl] for pl in plats},
+        "Equal split": {pl: budget / len(plats) for pl in plats},
+        f"All on best avg ROAS ({best})": {pl: (budget if pl == best else 0.0) for pl in plats},
+    }
+    rec = evaluate(strategies["Optimizer"], params, n_slices, margin)
+    summary = []
+    for name, alloc in strategies.items():
+        t = evaluate(alloc, params, n_slices, margin)
+        summary.append(dict(strategy=name, revenue=t.revenue.sum(),
+                            ROAS=t.revenue.sum() / budget, profit=t.profit.sum()))
+    summary = pd.DataFrame(summary)
+    base = summary.loc[summary.strategy == "Equal split", "revenue"].iloc[0]
+    summary["vs_equal_%"] = (summary.revenue / base - 1) * 100
+    return params, rec, summary
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--file", default="ads_10000.csv")
+    ap.add_argument("--file", default="ads_30000.csv")
     ap.add_argument("--budget", type=float, default=1_000_000)
     ap.add_argument("--slices", type=int, default=60,
                     help="ad slices per platform in the period (30 days x 2 ad sets)")
@@ -87,49 +115,30 @@ def main():
     args = ap.parse_args()
 
     df = pd.read_csv(RAW / args.file)
-    params = fit_curves(df)
-
-    print("Fitted response curves (a = ROAS at tiny spend, h = half-saturation spend):")
-    for pl, p in params.items():
-        print(f"  {pl:10s} a={p['a']:.2f} (+/-{p['a_se']:.2f})   h={p['h']:,.0f} (+/-{p['h_se']:,.0f})")
-
     B, N, m = args.budget, args.slices, args.margin
-    plats = list(params)
-
-    hist = df.groupby("platform", observed=True)["spend"].sum()
-    hist = (hist / hist.sum()).to_dict()
-    best = max(params, key=lambda pl: df.loc[df.platform == pl, "revenue"].sum()
-               / df.loc[df.platform == pl, "spend"].sum())
-
-    strategies = {
-        "Optimizer": optimize(params, B, N, args.min_share),
-        "Equal split": {pl: B / len(plats) for pl in plats},
-        "Last year's split": {pl: B * hist[pl] for pl in plats},
-        f"All on best avg ROAS ({best})": {pl: (B if pl == best else 0.0) for pl in plats},
-    }
-
     pd.set_option("display.width", 160)
-    rec = evaluate(strategies["Optimizer"], params, N, m)
-    print(f"\nRECOMMENDED SPLIT of Rs. {B:,.0f} (margin {m:.0%}):")
-    print(rec.round({"spend": 0, "revenue": 0, "ROAS": 2, "marginal_ROAS": 2,
-                     "share_%": 1, "profit": 0}).to_string(index=False))
-
-    summary = []
-    for name, alloc in strategies.items():
-        t = evaluate(alloc, params, N, m)
-        summary.append(dict(strategy=name, revenue=t.revenue.sum(),
-                            ROAS=t.revenue.sum() / B, profit=t.profit.sum()))
-    summary = pd.DataFrame(summary)
-    base = summary.loc[summary.strategy == "Equal split", "revenue"].iloc[0]
-    summary["vs_equal_%"] = (summary.revenue / base - 1) * 100
-    print("\nSTRATEGY COMPARISON:")
-    print(summary.round(2).to_string(index=False))
+    all_params, recs, sums = {}, [], []
+    for brand, g in df.groupby("brand", sort=False):
+        params, rec, summary = plan_for_brand(g, B, N, m, args.min_share)
+        all_params[brand] = params
+        print(f"\n=============== {brand} ===============")
+        print("Fitted curves (a = ROAS at tiny spend, h = half-saturation spend):")
+        for pl, p in params.items():
+            print(f"  {pl:10s} a={p['a']:.2f} (+/-{p['a_se']:.2f})   "
+                  f"h={p['h']:,.0f} (+/-{p['h_se']:,.0f})")
+        print(f"\nRECOMMENDED SPLIT of Rs. {B:,.0f} (margin {m:.0%}):")
+        print(rec.round({"spend": 0, "revenue": 0, "ROAS": 2, "marginal_ROAS": 2,
+                         "share_%": 1, "profit": 0}).to_string(index=False))
+        print("\nSTRATEGY COMPARISON:")
+        print(summary.round(2).to_string(index=False))
+        recs.append(rec.assign(brand=brand))
+        sums.append(summary.assign(brand=brand))
 
     OUT.mkdir(parents=True, exist_ok=True)
-    rec.to_csv(OUT / "recommendation.csv", index=False)
-    summary.to_csv(OUT / "strategy_comparison.csv", index=False)
+    pd.concat(recs).to_csv(OUT / "recommendation.csv", index=False)
+    pd.concat(sums).to_csv(OUT / "strategy_comparison.csv", index=False)
     with open(OUT / "response_curves.json", "w") as f:
-        json.dump(dict(params=params, budget=B, slices=N, margin=m), f, indent=2)
+        json.dump(dict(params=all_params, budget=B, slices=N, margin=m), f, indent=2)
     print(f"\nSaved results -> {OUT}")
 
 

@@ -3,7 +3,7 @@ Compute marketing KPIs from the simulated ad data.
 KPIs are computed from SUMS (total clicks / total impressions etc.),
 not by averaging row-level ratios, which would be wrong.
 
-Usage (Command Prompt):  python src\\analysis\\kpis.py --file ads_10000.csv
+Usage (Command Prompt):  python src\\analysis\\kpis.py --file ads_30000.csv
 """
 import argparse
 from pathlib import Path
@@ -30,7 +30,7 @@ def kpi_table(df, by):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--file", default="ads_10000.csv")
+    ap.add_argument("--file", default="ads_30000.csv")
     args = ap.parse_args()
 
     df = pd.read_csv(RAW / args.file, parse_dates=["date"])
@@ -38,20 +38,21 @@ def main():
     OUT.mkdir(parents=True, exist_ok=True)
 
     tables = {
-        "kpi_platform": ["platform"],
-        "kpi_campaign": ["campaign"],
-        "kpi_platform_campaign": ["platform", "campaign"],
-        "kpi_platform_age": ["platform", "age"],
-        "kpi_platform_gender": ["platform", "gender"],
-        "kpi_platform_city": ["platform", "city"],
-        "kpi_platform_device": ["platform", "device"],
-        "kpi_monthly": ["month", "platform"],
+        "kpi_brand": ["brand"],
+        "kpi_platform": ["brand", "platform"],
+        "kpi_campaign": ["brand", "campaign"],
+        "kpi_platform_campaign": ["brand", "platform", "campaign"],
+        "kpi_platform_age": ["brand", "platform", "age"],
+        "kpi_platform_gender": ["brand", "platform", "gender"],
+        "kpi_platform_city": ["brand", "platform", "city"],
+        "kpi_platform_device": ["brand", "platform", "device"],
+        "kpi_monthly": ["brand", "month", "platform"],
     }
     for name, by in tables.items():
         kpi_table(df, by).to_csv(OUT / f"{name}.csv", index=False)
 
     pd.set_option("display.width", 160)
-    print(kpi_table(df, ["platform"]).to_string(index=False))
+    print(kpi_table(df, ["brand", "platform"]).to_string(index=False))
     print(f"\nSaved {len(tables)} KPI tables -> {OUT}")
 
 
