@@ -520,7 +520,8 @@ def say_card(praise, fixes):
                 "what customers praise most (Project 1)")
     if len(fixes):
         r = fixes.iloc[0]
-        return ("What to say", f"Fix {r.aspect}", f"{r.negative:.0%} negative", "bad",
+        name = {"size": "sizing", "staff": "store service"}.get(r.aspect, r.aspect)
+        return ("What to say", f"Fix {name}", f"{r.negative:.0%} negative", "bad",
                 "the top complaint in Project 1 reviews")
     return ("What to say", "Test creatives", "", "", "no clear strength or complaint yet")
 
