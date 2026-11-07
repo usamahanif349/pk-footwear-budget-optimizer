@@ -117,6 +117,12 @@ CSS = """
 .fact:last-child {border-bottom: 0;}
 .fact b {color: #101828; font-variant-numeric: tabular-nums;}
 
+/* copy boxes: readable text instead of code font, copy button kept */
+[data-testid="stCode"] pre, [data-testid="stCode"] code {
+  font-family: "Source Sans Pro", "Source Sans", "Segoe UI", sans-serif !important;
+  font-size: 1rem !important; color: #101828 !important; line-height: 1.5 !important;}
+[data-testid="stCode"] pre {background: #F8FAFC !important; border: 1px solid #E4E7EC;}
+
 /* sidebar brand */
 .side-brand {font-size: 1.1rem; font-weight: 700; color: #101828; line-height: 1.25;
   margin-bottom: 2px;}
@@ -657,6 +663,11 @@ def page_marketing():
 # PAGE: AD COPY STUDIO
 # =====================================================================
 LANG_LABEL = {"en": "English", "ru": "Roman Urdu"}
+ANGLE_NAME = {"size": "Sizing", "staff": "Store service"}
+
+
+def angle_name(a):
+    return ANGLE_NAME.get(a, a.capitalize())
 
 
 def page_adcopy():
@@ -691,10 +702,10 @@ def page_adcopy():
               for p, _, _ in plan_rows}
 
     kpi_cards([
-        ("Lead message (A)", lead.capitalize(), "", "", source(lead)),
-        ("Test message (B)", test.capitalize(), "", "", source(test)),
-        ("Reassure on", fix.capitalize() if fix else "Nothing", "", "",
-         "a short line in every ad" if fix else "no other strong complaint"),
+        ("Lead message (A)", angle_name(lead), "", "", source(lead)),
+        ("Test message (B)", angle_name(test), "", "", source(test)),
+        ("Reassure on", angle_name(fix) if fix else "–", "", "",
+         "a short line in every ad" if fix else "no strong complaint found in reviews"),
         ("Campaign", campaign.replace(" Sale", ""), "", "", AC.CAMPAIGNS[campaign][lang]),
     ])
 
