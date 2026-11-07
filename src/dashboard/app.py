@@ -937,16 +937,19 @@ def page_goals():
                                                  line=dict(color="#FFFFFF", width=2)),
                                      hovertemplate="Target: %{y:,.0f} needs Rs. %{x:,.0f}"
                                                    "<extra></extra>"))
-            fig.add_hline(y=ceiling, line_dash="dot", line_color=GREY, line_width=1,
-                          annotation_text="Ceiling", annotation_font_color=INK_2)
+            if ceiling < 1.5 * max(ys):  # only draw the ceiling when it is close enough to matter
+                fig.add_hline(y=ceiling, line_dash="dot", line_color=GREY, line_width=1,
+                              annotation_text="Ceiling", annotation_font_color=INK_2,
+                              annotation_position="bottom right")
             fig.add_vline(x=budget, line_dash="dash", line_color=GREY, line_width=1,
                           annotation_text="Current budget", annotation_font_color=INK_2)
             fig.update_layout(xaxis_title="Monthly budget (Rs.)",
                               yaxis_title="Revenue (Rs.)" if metric == "revenue" else "Orders",
                               margin=dict(t=30), yaxis_rangemode="tozero")
             show(fig, 360)
-            st.caption("Each extra rupee buys less than the one before, so big targets get "
-                       "expensive fast, and no budget can pass the ceiling.")
+            st.caption(f"Each extra rupee buys less than the one before, so big targets get "
+                       f"expensive fast. No budget can pass the ceiling of about {fmt(ceiling)} "
+                       f"a month.")
     with right:
         with card("goal_split"):
             card_head("Where the money goes", f"Split of {rs(need)} a month")
