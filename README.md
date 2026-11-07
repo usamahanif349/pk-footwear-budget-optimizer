@@ -40,6 +40,17 @@ For each brand the dashboard turns the analysis into a one-page plan a marketing
 
 "What to say" comes from real customer reviews in Project 1; aspects with fewer than 10 mentions are left out (for example Servis price complaints, only 8 mentions). "Who" and "when" come from the simulated ad data, so they reflect its assumptions.
 
+### Marketing tools in the dashboard
+
+| Page | What a marketing manager gets |
+|---|---|
+| **Marketing plan** | Where to spend, who to target, what to say and when to push, plus a downloadable **3-page pitch pack (PDF)** per brand |
+| **Ad copy studio** | Ready-to-use ads for every funded platform and campaign, in **English and Roman Urdu**: headlines A and B for testing, ad text, call to action, hashtags, platform formats and Google search ads (within Google's character limits). Messages come from the Project 1 reviews: Borjan leads with comfort, Ndure answers sizing complaints |
+| **Campaign calendar 2027** | A monthly budget for the year with the real expected 2027 dates (Eid ul Fitr ~9 Mar, Eid ul Adha ~16 May, back to school ~1 Aug, 11.11): start ads 2–3 weeks before each event, spend less in quiet months (June, September), and a platform split for every month |
+| **Goal planner** | Works backwards from a target: how much budget, and where, to reach a monthly revenue or orders target. Example: +25% revenue for Borjan needs about +50% budget, because each extra rupee buys less |
+
+Ad copy is sample copy written by the tool (template based, no paid AI service); it is not the brands' real advertising. Eid dates depend on the moon sighting. The calendar's "spend more in campaign weeks" rule comes from the simulated campaign results.
+
 ### 1. Recommended split of Rs. 1,000,000 per brand (one month)
 
 | Platform | Borjan | Servis | Ndure |
@@ -195,6 +206,9 @@ notebooks/benchmark_pandas_mapreduce_spark.ipynb   Colab: Hadoop + Spark benchma
 src/simulation/generate_data.py     simulated ad data generator (brands, sentiment, assumptions)
 src/analysis/kpis.py                CTR, CPC, CVR, CPA, ROAS tables
 src/analysis/project1_aspects.py    what customers praise / complain about, per brand (from Project 1)
+src/marketing/ad_copy.py            ad copy and campaign brief generator (English + Roman Urdu)
+src/marketing/calendar_plan.py      2027 campaign calendar
+src/marketing/pitch_pack.py         3-page PDF marketing plan per brand
 src/optimizer/optimize.py           response curves + budget optimiser, per brand
 src/optimizer/validate.py           self-check against the true optimum
 src/optimizer/hard_mode.py          self-check when the true curve has a different shape
