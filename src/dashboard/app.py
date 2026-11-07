@@ -23,6 +23,7 @@ from kpis import kpi_table  # noqa: E402
 import generate_data as G  # noqa: E402
 import ad_copy as AC  # noqa: E402
 import calendar_plan as CAL  # noqa: E402
+from pitch_pack import build_pitch_pack  # noqa: E402
 
 DATA_FILE = ROOT / "data" / "raw" / "ads_30000.csv"
 PROC = ROOT / "data" / "processed"
@@ -656,8 +657,13 @@ def page_marketing():
     lines += [f"- {FIX_ANGLE[x]}" for x in fixes.aspect.head(2)]
     lines += ["", "3. WHEN TO PUSH"]
     lines += [f"- {r.campaign}: ROAS {r.ROAS:.2f} -> {r.Advice}" for r in cm.itertuples()]
-    st.download_button("Download this marketing plan (TXT)", "\n".join(lines),
-                       f"{brand.lower()}_marketing_plan.txt", "text/plain", type="primary")
+    d1, d2 = st.columns(2)
+    d1.download_button("Download the pitch pack (PDF)", pitch_pack_bytes(),
+                       f"{brand.lower()}_marketing_plan.pdf", "application/pdf", type="primary",
+                       help="A 3-page plan: budget split, audience, messaging, ad copy, 2027 "
+                            "calendar and a growth target.")
+    d2.download_button("Download as plain text (TXT)", "\n".join(lines),
+                       f"{brand.lower()}_marketing_plan.txt", "text/plain")
 
 
 # =====================================================================
@@ -967,6 +973,60 @@ def page_goals():
                     f'<div class="alloc-meta">{rs(r["spend"])} &nbsp;·&nbsp; about '
                     f'{r["orders"]:,.0f} orders</div></div>')
             html("".join(rows))
+
+
+
+def pitch_pack_bytes(campaign="11.11 Mega Sale"):
+    """Collect everything for the PDF pitch pack of the selected brand."""
+    a, praise, fixes = brand_messaging(brand)
+    lead, test, fix = AC.angles_for(praise.aspect.tolist(), fixes.aspect.tolist())
+    ages, cities = segment_view(df, "age"), segment_view(df, "city")
+    devices = segment_view(df, "device")
+    funded_rows = [r for _, r in order.iterrows() if r["spend"] > 1]
+    say_rows = []
+    for _, r in praise.head(2).iterrows():
+        say_rows.append(("Lead with", PRAISE_ANGLE[r.aspect], f"{r.positive:.0%} positive, "
+                         f"{int(r.mentions)} mentions"))
+    for _, r in fixes.head(2).iterrows():
+        say_rows.append(("Fix or answer", FIX_ANGLE[r.aspect], f"{r.negative:.0%} negative, "
+                         f"{int(r.mentions)} mentions"))
+    if not say_rows:
+        say_rows.append(("Test", "No clear strength or complaint yet: test several creatives.", "–"))
+    shown = [r for r in funded_rows if r["share_%"] >= 3]
+    lead_p = shown[0]["platform"]
+    copy_core = (AC.ad_copy(brand, lead_p, campaign, lead, test, fix, "en"),
+                 AC.ad_copy(brand, lead_p, campaign, lead, test, fix, "ru"))
+    playbook_rows = [(r["platform"], rs(r["spend"]), AC.PLATFORMS[r["platform"]]["format"],
+                      AC.PLATFORMS[r["platform"]]["tips"]) for r in shown]
+    google = (AC.ad_copy(brand, "Google", campaign, lead, test, fix, "en")
+              if any(r["platform"] == "Google" for r in shown) else None)
+    camp_roas = kpi_table(df, ["campaign"]).set_index("campaign").ROAS.to_dict()
+    params = {p: curves[p] for p in platforms}
+    g = df.groupby("platform", observed=True)[["revenue", "conversions"]].sum()
+    aov = (g.revenue / g.conversions).to_dict()
+    target = tot_rev * 1.25
+    need = budget_for_target(target, "revenue", params, aov) or float("nan")
+    last = plan_for(need, params, aov).query("spend > 1").marginal_ROAS.min() if need == need else 0
+    names = funded.platform.tolist()
+    ctx = dict(
+        brand=brand, budget=budget, margin=margin, revenue=tot_rev, profit=tot_profit,
+        gain_equal=opt_gain, best=best, gain_best=(tot_rev / allbest_rev - 1) * 100,
+        colors=COLORS, reviews=G.SENTIMENT[brand]["reviews"], campaign=campaign,
+        alloc_rows=[(r["platform"], r["share_%"], r["spend"], r["revenue"], r["ROAS"])
+                    for _, r in order.iterrows()],
+        why=(f"Lead with {names[0]}" + (f" and {names[1]}" if len(names) > 1 else "") +
+             ". Each platform gets money until its next rupee earns about the same as everywhere "
+             f"else (about Rs. {funded.marginal_ROAS.min():.2f}). At a {margin:.0%} margin, "
+             f"break-even is a ROAS of {breakeven:.2f}."),
+        audience_rows=[(r["platform"], ages[r["platform"]][0], cities[r["platform"]][0],
+                        devices[r["platform"]][0], ages[r["platform"]][1])
+                       for r in funded_rows if r["share_%"] >= 3],
+        say_rows=say_rows, copy_core=copy_core, playbook_rows=playbook_rows, google=google,
+        yearly=budget * 12, cal_plan=CAL.monthly_plan(camp_roas, budget * 12),
+        cal_dates=CAL.key_dates(camp_roas),
+        goal=dict(target=target, budget=need, profitable=bool(last >= breakeven)),
+        dashboard_url="https://pk-footwear-budget-optimizer.streamlit.app/", repo_url=REPO_URL)
+    return build_pitch_pack(ctx)
 
 # =====================================================================
 # PAGE 3: PLAN & SCENARIOS
