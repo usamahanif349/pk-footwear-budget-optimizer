@@ -16,11 +16,12 @@ import plotly.io as pio
 import streamlit as st
 
 ROOT = Path(__file__).resolve().parents[2]
-for sub in ["optimizer", "analysis", "simulation"]:
+for sub in ["optimizer", "analysis", "simulation", "marketing"]:
     sys.path.insert(0, str(ROOT / "src" / sub))
 from optimize import fit_curves, optimize, evaluate, response  # noqa: E402
 from kpis import kpi_table  # noqa: E402
 import generate_data as G  # noqa: E402
+import ad_copy as AC  # noqa: E402
 
 DATA_FILE = ROOT / "data" / "raw" / "ads_30000.csv"
 PROC = ROOT / "data" / "processed"
@@ -115,6 +116,12 @@ CSS = """
   border-bottom: 1px solid #F2F4F7; font-size: .93rem; color: #344054;}
 .fact:last-child {border-bottom: 0;}
 .fact b {color: #101828; font-variant-numeric: tabular-nums;}
+
+/* copy boxes: readable text instead of code font, copy button kept */
+[data-testid="stCode"] pre, [data-testid="stCode"] code {
+  font-family: "Source Sans Pro", "Source Sans", "Segoe UI", sans-serif !important;
+  font-size: 1rem !important; color: #101828 !important; line-height: 1.5 !important;}
+[data-testid="stCode"] pre {background: #F8FAFC !important; border: 1px solid #E4E7EC;}
 
 /* sidebar brand */
 .side-brand {font-size: 1.1rem; font-weight: 700; color: #101828; line-height: 1.25;
@@ -526,16 +533,24 @@ def say_card(praise, fixes):
     return ("What to say", "Test creatives", "", "", "no clear strength or complaint yet")
 
 
+def brand_messaging(b):
+    """Aspect table for a brand, plus what customers praise and complain about
+    (only aspects with enough mentions)."""
+    asp = read_csv("brand_aspects.csv")
+    a = asp[asp.brand == b] if asp is not None else pd.DataFrame(
+        columns=["brand", "aspect", "mentions", "positive", "negative", "net"])
+    solid = a[a.mentions >= MIN_MENTIONS]
+    praise = solid[solid.positive >= 0.5].sort_values("positive", ascending=False)
+    fixes = solid[solid.negative >= 0.35].sort_values("negative", ascending=False)
+    return a, praise, fixes
+
+
 def page_marketing():
     need_settings()
     page_head("Dashboard / Marketing plan", f"{brand} marketing plan",
               "Where to spend, who to target, what to say and when to push, in one page.",
               [(brand, ""), SIM_TAG])
-    asp = read_csv("brand_aspects.csv")
-    a = asp[asp.brand == brand] if asp is not None else pd.DataFrame()
-    solid = a[a.mentions >= MIN_MENTIONS]
-    praise = solid[solid.positive >= 0.5].sort_values("positive", ascending=False)
-    fixes = solid[solid.negative >= 0.35].sort_values("negative", ascending=False)
+    a, praise, fixes = brand_messaging(brand)
     camp = kpi_table(df, ["campaign"]).sort_values("ROAS", ascending=False)
     avg_roas = df.revenue.sum() / df.spend.sum()
     ages, cities = segment_view(df, "age"), segment_view(df, "city")
@@ -642,6 +657,101 @@ def page_marketing():
     lines += [f"- {r.campaign}: ROAS {r.ROAS:.2f} -> {r.Advice}" for r in cm.itertuples()]
     st.download_button("Download this marketing plan (TXT)", "\n".join(lines),
                        f"{brand.lower()}_marketing_plan.txt", "text/plain", type="primary")
+
+
+# =====================================================================
+# PAGE: AD COPY STUDIO
+# =====================================================================
+LANG_LABEL = {"en": "English", "ru": "Roman Urdu"}
+ANGLE_NAME = {"size": "Sizing", "staff": "Store service"}
+
+
+def angle_name(a):
+    return ANGLE_NAME.get(a, a.capitalize())
+
+
+def page_adcopy():
+    need_settings()
+    page_head("Dashboard / Ad copy studio", f"{brand} ad copy studio",
+              "Ready-to-use ad copy for every funded platform, built from the budget plan and "
+              "what real customers say about the brand.", [(brand, ""), ("Sample copy", "sim")])
+    a, praise, fixes = brand_messaging(brand)
+    lead, test, fix = AC.angles_for(praise.aspect.tolist(), fixes.aspect.tolist())
+    praised, complained = set(praise.aspect), set(fixes.aspect)
+
+    def source(angle):
+        if angle in praised:
+            r = praise[praise.aspect == angle].iloc[0]
+            return f"customers praise it ({r.positive:.0%} positive)"
+        if angle in complained:
+            r = fixes[fixes.aspect == angle].iloc[0]
+            return f"answers a complaint ({r.negative:.0%} negative)"
+        return "a test idea, not from reviews"
+
+    c1, c2 = st.columns([3, 2])
+    campaign = c1.selectbox("Campaign", list(AC.CAMPAIGNS),
+                            index=list(AC.CAMPAIGNS).index("11.11 Mega Sale"))
+    lang = c2.radio("Language", ["en", "ru"], format_func=LANG_LABEL.get, horizontal=True)
+
+    ages, cities = segment_view(df, "age"), segment_view(df, "city")
+    devices = segment_view(df, "device")
+    plan_rows = [(r["platform"], r["share_%"], r["spend"]) for _, r in order.iterrows()
+                 if r["spend"] > 1 and r["share_%"] >= 3]
+    audiences = {p: f"{ages[p][0]}, {cities[p][0]}, {devices[p][0]}" for p, _, _ in plan_rows}
+    copies = {p: {lg: AC.ad_copy(brand, p, campaign, lead, test, fix, lg) for lg in ("en", "ru")}
+              for p, _, _ in plan_rows}
+
+    kpi_cards([
+        ("Lead message (A)", angle_name(lead), "", "", source(lead)),
+        ("Test message (B)", angle_name(test), "", "", source(test)),
+        ("Reassure on", angle_name(fix) if fix else "–", "", "",
+         "a short line in every ad" if fix else "no strong complaint found in reviews"),
+        ("Campaign", campaign.replace(" Sale", ""), "", "", AC.CAMPAIGNS[campaign][lang]),
+    ])
+
+    for p, share, spend in plan_rows:
+        x = copies[p][lang]
+        with card(f"ad_{p}"):
+            card_head(f"{p}: {share:.1f}% of the budget ({rs(spend)} a month)",
+                      f"{AC.PLATFORMS[p]['format']}. Audience: {audiences[p]}.")
+            left, right = st.columns([3, 2], gap="medium")
+            with left:
+                st.caption("Headline A")
+                st.code(x["headline_a"], language=None)
+                st.caption("Ad text A")
+                st.code(x["text_a"], language=None, wrap_lines=True)
+                st.caption("Headline B (for the A/B test)")
+                st.code(x["headline_b"], language=None)
+                if "google_headlines" in x:
+                    st.caption("Search ad headlines (each 30 characters or fewer)")
+                    st.code("\n".join(x["google_headlines"]), language=None)
+                    st.caption("Search ad descriptions (each 90 characters or fewer)")
+                    st.code("\n".join(x["google_descriptions"]), language=None, wrap_lines=True)
+                    st.caption("Keywords")
+                    st.code(", ".join(x["keywords"]), language=None)
+                else:
+                    st.caption("Hashtags")
+                    st.code(x["hashtags"], language=None)
+            with right:
+                html(f'<div class="fact"><span>Call to action</span><b>{x["cta"]}</b></div>'
+                     f'<div class="fact"><span>Format</span><b>{AC.PLATFORMS[p]["format"].split(",")[0]}</b></div>')
+                html(f'<p class="why" style="margin-top:10px"><b>Creative tips.</b> '
+                     f'{AC.PLATFORMS[p]["tips"]}</p>')
+
+    with card("ad_test"):
+        card_head("How to use this copy", "")
+        st.markdown(
+            "1. **Run A and B side by side** with equal budget for the first week.\n"
+            "2. **Keep the winner:** move the budget to whichever headline gets more orders per "
+            "rupee.\n"
+            "3. **Reply to comments fast:** questions about price, size and delivery are buying "
+            "signals.")
+        st.caption("This is sample copy written by the tool for a class project. It is not the "
+                   "brand's real advertising and uses none of its real slogans.")
+    st.download_button("Download the campaign brief (TXT)",
+                       AC.brief_text(brand, campaign, budget, plan_rows, copies, audiences,
+                                     lead, test, fix),
+                       f"{brand.lower()}_campaign_brief.txt", "text/plain", type="primary")
 
 # =====================================================================
 # PAGE 3: PLAN & SCENARIOS
@@ -1090,6 +1200,8 @@ pages = [
             url_path="overview", default=True),
     st.Page(page_marketing, title="Marketing plan", icon=":material/campaign:",
             url_path="marketing-plan"),
+    st.Page(page_adcopy, title="Ad copy studio", icon=":material/edit_note:",
+            url_path="ad-copy"),
     st.Page(page_plan, title="Plan & scenarios", icon=":material/tune:", url_path="plan"),
     st.Page(page_performance, title="Performance", icon=":material/insights:",
             url_path="performance"),
