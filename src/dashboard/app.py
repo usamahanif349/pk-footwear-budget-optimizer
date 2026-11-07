@@ -22,6 +22,7 @@ from optimize import fit_curves, optimize, evaluate, response  # noqa: E402
 from kpis import kpi_table  # noqa: E402
 import generate_data as G  # noqa: E402
 import ad_copy as AC  # noqa: E402
+import calendar_plan as CAL  # noqa: E402
 
 DATA_FILE = ROOT / "data" / "raw" / "ads_30000.csv"
 PROC = ROOT / "data" / "processed"
@@ -753,6 +754,88 @@ def page_adcopy():
                                      lead, test, fix),
                        f"{brand.lower()}_campaign_brief.txt", "text/plain", type="primary")
 
+
+# =====================================================================
+# PAGE: CAMPAIGN CALENDAR 2027
+# =====================================================================
+def page_calendar():
+    need_settings()
+    page_head("Dashboard / Campaign calendar", f"{brand} campaign calendar 2027",
+              "When to spend through the year: more money in the weeks before Eid, back to "
+              "school and 11.11, less in quiet months.", [(brand, ""), SIM_TAG])
+    camp_roas = kpi_table(df, ["campaign"]).set_index("campaign").ROAS.to_dict()
+    yearly = st.number_input("Yearly ad budget (Rs.)", min_value=1_000_000, max_value=600_000_000,
+                             value=int(budget * 12), step=1_000_000,
+                             help="Starts at 12 × the monthly budget in the sidebar.")
+    plan = CAL.monthly_plan(camp_roas, yearly)
+    dates = CAL.key_dates(camp_roas)
+    busiest = plan.loc[plan.budget.idxmax()]
+    quiet = plan.loc[plan.budget.idxmin()]
+    nxt = dates.iloc[0]
+    kpi_cards([
+        ("Yearly budget", rs(yearly), "", "", f"an even split would be {rs(yearly / 12)} a month"),
+        ("Busiest month", busiest.month, f"{busiest['vs_even_%']:+.0f}%", "good",
+         f"{rs(busiest.budget)}: {busiest.main_campaign}"),
+        ("Quietest month", quiet.month, f"{quiet['vs_even_%']:+.0f}%", "neutral",
+         f"{rs(quiet.budget)}: always-on ads only"),
+        ("First push of the year", "Eid ul Fitr", "", "",
+         f"start ads {nxt.ads_from:%d %b}, Eid expected {nxt.event_date:%d %b}"),
+    ])
+
+    with card("cal_chart"):
+        card_head("Monthly budget for 2027",
+                  "Navy months include a campaign window; grey months are always-on ads only")
+        fig = go.Figure(go.Bar(
+            x=plan.month, y=plan.budget,
+            marker_color=[NAVY if d > 0 else GREY_LIGHT for d in plan.campaign_days],
+            text=[f"Rs. {v / 1e6:.2f}M" for v in plan.budget], textposition="outside",
+            cliponaxis=False, customdata=plan.main_campaign,
+            hovertemplate="%{x}: Rs. %{y:,.0f}<br>%{customdata}<extra></extra>"))
+        fig.add_hline(y=yearly / 12, line_dash="dot", line_color=GREY, line_width=1,
+                      annotation_text="Even split", annotation_font_color=INK_2,
+                      annotation_position="top left")
+        fig.update_layout(yaxis_title="Ad budget (Rs.)", showlegend=False, margin=dict(t=30),
+                          yaxis_range=[0, plan.budget.max() * 1.18])
+        show(fig, 360)
+
+    if True:
+        with card("cal_dates"):
+            card_head("Key dates and ad windows",
+                      "Start ads 2–3 weeks before each event, when people shop for it")
+            t = dates.copy()
+            t["Event"] = t.event_date.dt.strftime("%d %b %Y")
+            t["Run ads"] = t.ads_from.dt.strftime("%d %b") + " to " + t.ads_to.dt.strftime("%d %b")
+            t["Spend per day"] = t.weight.map(lambda w: f"{w:.1f}× normal")
+            st.dataframe(t[["campaign", "Event", "Run ads", "roas", "Spend per day"]].rename(
+                columns={"campaign": "Campaign", "roas": "ROAS"}).style.format({"ROAS": "{:.2f}"}),
+                hide_index=True)
+            st.caption("Eid dates depend on the moon sighting and can move by a day or two "
+                       "(expected dates: officeholidays.com). Spend per day = how much better the "
+                       "campaign's ROAS was than always-on ads, capped at 2×.")
+    if True:
+        with card("cal_split"):
+            card_head("Platform split per month",
+                      "The optimizer re-runs for each month's budget. In smaller months it "
+                      "concentrates on the platforms with the best early returns.")
+            rows = []
+            for _, r in plan.iterrows():
+                al = optimize({p: curves[p] for p in platforms}, r.budget, slices, min_share, max_share)
+                rows.append({"Month": r.month, **{p: al.get(p, 0) / r.budget * 100
+                                                  for p in order.platform if p in platforms}})
+            sp = pd.DataFrame(rows)
+            sp["Budget"] = plan.budget.values
+            sp = sp[["Month", "Budget"] + [c for c in sp.columns if c not in ("Month", "Budget")]]
+            fmt = {c: "{:.0f}%" for c in sp.columns if c not in ("Month", "Budget")}
+            fmt["Budget"] = "Rs. {:,.0f}"
+            st.dataframe(sp.style.format(fmt), hide_index=True, height=460)
+    st.caption("A planning rule of thumb based on simulated campaign results: the optimizer itself "
+               "has no seasonality.")
+    out = plan[["month", "budget", "main_campaign"]].merge(sp.drop(columns="Budget"),
+                                                           left_on="month", right_on="Month")
+    st.download_button("Download the 2027 calendar (CSV)", out.drop(columns="Month").round(1)
+                       .to_csv(index=False), f"{brand.lower()}_calendar_2027.csv", "text/csv",
+                       type="primary")
+
 # =====================================================================
 # PAGE 3: PLAN & SCENARIOS
 # =====================================================================
@@ -1202,6 +1285,8 @@ pages = [
             url_path="marketing-plan"),
     st.Page(page_adcopy, title="Ad copy studio", icon=":material/edit_note:",
             url_path="ad-copy"),
+    st.Page(page_calendar, title="Campaign calendar", icon=":material/calendar_month:",
+            url_path="calendar"),
     st.Page(page_plan, title="Plan & scenarios", icon=":material/tune:", url_path="plan"),
     st.Page(page_performance, title="Performance", icon=":material/insights:",
             url_path="performance"),
