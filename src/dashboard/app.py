@@ -798,8 +798,7 @@ def page_calendar():
                           yaxis_range=[0, plan.budget.max() * 1.18])
         show(fig, 360)
 
-    c1, c2 = st.columns([3, 2], gap="medium")
-    with c1:
+    if True:
         with card("cal_dates"):
             card_head("Key dates and ad windows",
                       "Start ads 2–3 weeks before each event, when people shop for it")
@@ -813,20 +812,26 @@ def page_calendar():
             st.caption("Eid dates depend on the moon sighting and can move by a day or two "
                        "(expected dates: officeholidays.com). Spend per day = how much better the "
                        "campaign's ROAS was than always-on ads, capped at 2×.")
-    with c2:
+    if True:
         with card("cal_split"):
-            card_head("Platform split per month", "The optimizer re-runs for each month's budget")
+            card_head("Platform split per month",
+                      "The optimizer re-runs for each month's budget. In smaller months it "
+                      "concentrates on the platforms with the best early returns.")
             rows = []
             for _, r in plan.iterrows():
                 al = optimize({p: curves[p] for p in platforms}, r.budget, slices, min_share, max_share)
                 rows.append({"Month": r.month, **{p: al.get(p, 0) / r.budget * 100
                                                   for p in order.platform if p in platforms}})
             sp = pd.DataFrame(rows)
-            st.dataframe(sp.style.format({c: "{:.0f}%" for c in sp.columns if c != "Month"}),
-                         hide_index=True, height=460)
+            sp["Budget"] = plan.budget.values
+            sp = sp[["Month", "Budget"] + [c for c in sp.columns if c not in ("Month", "Budget")]]
+            fmt = {c: "{:.0f}%" for c in sp.columns if c not in ("Month", "Budget")}
+            fmt["Budget"] = "Rs. {:,.0f}"
+            st.dataframe(sp.style.format(fmt), hide_index=True, height=460)
     st.caption("A planning rule of thumb based on simulated campaign results: the optimizer itself "
                "has no seasonality.")
-    out = plan[["month", "budget", "main_campaign"]].merge(sp, left_on="month", right_on="Month")
+    out = plan[["month", "budget", "main_campaign"]].merge(sp.drop(columns="Budget"),
+                                                           left_on="month", right_on="Month")
     st.download_button("Download the 2027 calendar (CSV)", out.drop(columns="Month").round(1)
                        .to_csv(index=False), f"{brand.lower()}_calendar_2027.csv", "text/csv",
                        type="primary")
