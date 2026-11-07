@@ -836,6 +836,135 @@ def page_calendar():
                        .to_csv(index=False), f"{brand.lower()}_calendar_2027.csv", "text/csv",
                        type="primary")
 
+
+# =====================================================================
+# PAGE: GOAL PLANNER (work backwards from a target)
+# =====================================================================
+def plan_for(b_budget, plats_params, aov):
+    al = optimize(plats_params, b_budget, slices, min_share, max_share)
+    t = evaluate(al, plats_params, slices, margin)
+    t["orders"] = t.apply(lambda r: r.revenue / aov[r.platform] if r.spend > 1 else 0.0, axis=1)
+    return t
+
+
+def budget_for_target(target, metric, plats_params, aov, cap=500_000_000):
+    """Smallest monthly budget whose optimal split reaches the target (bisection)."""
+    def value(b):
+        return plan_for(b, plats_params, aov)[metric].sum()
+    hi = 100_000.0
+    while value(hi) < target:
+        hi *= 2
+        if hi > cap:
+            return None
+    lo = 0.0
+    for _ in range(30):
+        mid = (lo + hi) / 2
+        if value(mid) >= target:
+            hi = mid
+        else:
+            lo = mid
+        if hi - lo < 1_000:
+            break
+    return hi
+
+
+def page_goals():
+    need_settings()
+    page_head("Dashboard / Goal planner", f"{brand} goal planner",
+              "Start from the target, not the budget: how much do we need to spend, and where, "
+              "to hit it?", [(brand, ""), SIM_TAG])
+    params = {p: curves[p] for p in platforms}
+    g = df.groupby("platform", observed=True)[["revenue", "conversions"]].sum()
+    aov = (g.revenue / g.conversions).to_dict()
+    # the most these platforms can ever deliver (each curve flattens out at a*h per slice)
+    ceiling_rev = sum(slices * c["a"] * c["h"] for c in params.values())
+    ceiling_orders = sum(slices * c["a"] * c["h"] / aov[p] for p, c in params.items())
+    now = plan_for(budget, params, aov)
+
+    c1, c2 = st.columns([1, 2])
+    metric_lbl = c1.radio("Target", ["Monthly revenue", "Monthly orders"], horizontal=True)
+    metric = "revenue" if metric_lbl == "Monthly revenue" else "orders"
+    current = now[metric].sum()
+    if metric == "revenue":
+        target = c2.number_input("Revenue target (Rs.)", min_value=500_000, step=500_000,
+                                 value=int(round(current * 1.25 / 500_000) * 500_000))
+    else:
+        target = c2.number_input("Orders target", min_value=50, step=50,
+                                 value=int(round(current * 1.25 / 50) * 50))
+    ceiling = ceiling_rev if metric == "revenue" else ceiling_orders
+    fmt = rs if metric == "revenue" else (lambda v: f"{v:,.0f} orders")
+
+    if target >= ceiling * 0.98:
+        st.error(f"This target is beyond what these platforms can deliver under the current "
+                 f"assumptions (the ceiling is about {fmt(ceiling)} a month). Lower the target or "
+                 f"allow more platforms.")
+        st.stop()
+    need = budget_for_target(target, metric, params, aov)
+    if need is None:
+        st.error("This target would need an unrealistic budget. Try a lower target.")
+        st.stop()
+    t = plan_for(need, params, aov).sort_values("spend", ascending=False)
+    rev, prof = t.revenue.sum(), t.profit.sum()
+    last_rupee = t[t.spend > 1].marginal_ROAS.min()
+    kpi_cards([
+        ("Budget needed", rs(need), f"{(need / budget - 1) * 100:+.0f}%", "neutral",
+         f"vs your current {rs(budget)} a month"),
+        ("Expected revenue", rs(rev), f"ROAS {rev / need:.2f}", "neutral", "per month"),
+        ("Expected orders", f"{t.orders.sum():,.0f}", "", "",
+         f"about {rs(rev / max(t.orders.sum(), 1))} per order"),
+        ("Expected profit", rs(prof), "worth it" if last_rupee >= breakeven else "costly",
+         "good" if last_rupee >= breakeven else "bad",
+         f"after a {margin:.0%} margin and the ad spend"),
+    ])
+    if last_rupee < breakeven:
+        st.warning(f"Reaching this target is possible but expensive: the last rupees return only "
+                   f"Rs. {last_rupee:.2f} each, below break-even (Rs. {breakeven:.2f}). Profit is "
+                   f"lower than at a smaller budget. See Plan & scenarios for the profit peak.")
+
+    left, right = st.columns([3, 2], gap="medium")
+    with left:
+        with card("goal_curve"):
+            card_head(f"What each budget delivers ({metric_lbl.lower()})",
+                      "The optimizer's best split at every budget; the dot is your target")
+            xs = np.linspace(100_000, max(need * 1.6, budget * 1.6), 40)
+            ys = [plan_for(b, params, aov)[metric].sum() for b in xs]
+            fig = go.Figure(go.Scatter(x=xs, y=ys, mode="lines", line=dict(color=NAVY, width=2),
+                                       showlegend=False,
+                                       hovertemplate="Budget Rs. %{x:,.0f} → %{y:,.0f}"
+                                                     "<extra></extra>"))
+            fig.add_trace(go.Scatter(x=[need], y=[target], mode="markers", showlegend=False,
+                                     marker=dict(size=12, color="#EB6834",
+                                                 line=dict(color="#FFFFFF", width=2)),
+                                     hovertemplate="Target: %{y:,.0f} needs Rs. %{x:,.0f}"
+                                                   "<extra></extra>"))
+            fig.add_hline(y=ceiling, line_dash="dot", line_color=GREY, line_width=1,
+                          annotation_text="Ceiling", annotation_font_color=INK_2)
+            fig.add_vline(x=budget, line_dash="dash", line_color=GREY, line_width=1,
+                          annotation_text="Current budget", annotation_font_color=INK_2)
+            fig.update_layout(xaxis_title="Monthly budget (Rs.)",
+                              yaxis_title="Revenue (Rs.)" if metric == "revenue" else "Orders",
+                              margin=dict(t=30), yaxis_rangemode="tozero")
+            show(fig, 360)
+            st.caption("Each extra rupee buys less than the one before, so big targets get "
+                       "expensive fast, and no budget can pass the ceiling.")
+    with right:
+        with card("goal_split"):
+            card_head("Where the money goes", f"Split of {rs(need)} a month")
+            rows = []
+            for _, r in t.iterrows():
+                p = r["platform"]
+                if r["spend"] <= 1:
+                    continue
+                rows.append(
+                    f'<div class="alloc-row"><div class="alloc-top"><span class="alloc-name">'
+                    f'<span class="sw" style="background:{COLORS[p]}"></span>{p}</span>'
+                    f'<span class="alloc-pct">{r["share_%"]:.1f}%</span></div>'
+                    f'<div class="alloc-track"><div class="alloc-fill" style="width:'
+                    f'{r["share_%"]:.2f}%;background:{COLORS[p]}"></div></div>'
+                    f'<div class="alloc-meta">{rs(r["spend"])} &nbsp;·&nbsp; about '
+                    f'{r["orders"]:,.0f} orders</div></div>')
+            html("".join(rows))
+
 # =====================================================================
 # PAGE 3: PLAN & SCENARIOS
 # =====================================================================
@@ -1287,6 +1416,7 @@ pages = [
             url_path="ad-copy"),
     st.Page(page_calendar, title="Campaign calendar", icon=":material/calendar_month:",
             url_path="calendar"),
+    st.Page(page_goals, title="Goal planner", icon=":material/flag:", url_path="goals"),
     st.Page(page_plan, title="Plan & scenarios", icon=":material/tune:", url_path="plan"),
     st.Page(page_performance, title="Performance", icon=":material/insights:",
             url_path="performance"),
